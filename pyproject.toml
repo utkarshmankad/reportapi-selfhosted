@@ -1,0 +1,40 @@
+[project]
+name = "reportapi-selfhosted"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "utkarshmankad",email = "utkarsh.mankad@gmail.com"}
+]
+requires-python = "^3.12"
+dependencies = [
+    "fastapi (>=0.141.1,<0.142.0)",
+    "uvicorn[standard] (>=0.52.1,<0.53.0)",
+    "pydantic (>=2.13.4,<3.0.0)",
+    "pydantic-settings (>=2.14.2,<3.0.0)",
+    "sqlalchemy[asyncio] (>=2.0.51,<3.0.0)",
+    "asyncpg (>=0.31.0,<0.32.0)",
+    "alembic (>=1.19.0,<2.0.0)",
+    "celery (>=5.6.3,<6.0.0)",
+    "redis (>=8.1.0,<9.0.0)",
+    "python-jose (>=3.5.0,<4.0.0)",
+    "jinja2 (>=3.1.6,<4.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "psycopg2-binary (>=2.9.12,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)",
+    "pytest-asyncio (>=1.4.0,<2.0.0)",
+    "pytest-cov (>=7.1.0,<8.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "black (>=26.5.1,<27.0.0)",
+    "ruff (>=0.16.1,<0.17.0)",
+    "mypy (>=2.3.0,<3.0.0)",
+    "respx (>=0.23.1,<0.24.0)"
+]
