@@ -22,7 +22,8 @@ dependencies = [
     "psycopg2-binary (>=2.9.12,<3.0.0)",
     "croniter (>=6.2.4,<7.0.0)",
     "chromadb (>=1.5.9,<2.0.0)",
-    "weasyprint (>=69.0,<70.0)"
+    "weasyprint (>=69.0,<70.0)",
+    "greenlet (>=3.5.4,<4.0.0)"
 ]
 
 
@@ -39,5 +40,12 @@ dev = [
     "black (>=26.5.1,<27.0.0)",
     "ruff (>=0.16.1,<0.17.0)",
     "mypy (>=2.3.0,<3.0.0)",
-    "respx (>=0.23.1,<0.24.0)"
+    "respx (>=0.23.1,<0.24.0)",
+    "bandit (>=1.8.0,<2.0.0)",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: needs a real Postgres/Redis, not just mocks",
+    "e2e: exercises the full docker compose stack",
 ]

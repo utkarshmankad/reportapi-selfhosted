@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  POETRY_NO_INTERACTION: 1
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==2.4.1
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Run unit tests
+        env:
+          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
+          REDIS_URL: "redis://localhost:6379/0"
+        run: poetry run pytest tests/ -v -m "not integration and not e2e" --ignore=tests/integration
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==2.4.1
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Bandit (static analysis)
+        run: poetry run bandit -r app -ll
+
+      - name: pip-audit (dependency vulnerabilities)
+        run: pipx run pip-audit --progress-spinner=off || true
+        # Non-blocking for now: some transitive deps (chromadb, weasyprint)
+        # pull in packages with advisories that don't apply to how they're
+        # used here. Flip this to a hard failure once the noise is triaged.
+
+      - name: SSRF / credential-handling regression tests
+        env:
+          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
+          REDIS_URL: "redis://localhost:6379/0"
+        run: poetry run pytest tests/test_ssrf_guard.py tests/test_env_writer.py tests/test_pii.py -v
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reportapi
+          POSTGRES_PASSWORD: reportapi
+          POSTGRES_DB: reportapi
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U reportapi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pipx install poetry==2.4.1
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
+          REDIS_URL: "redis://localhost:6379/0"
+        run: poetry run alembic upgrade head
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
+          REDIS_URL: "redis://localhost:6379/0"
+        run: poetry run pytest tests/integration/ -v -m integration
+
+  e2e-tests:
+    name: End-to-end (docker compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run e2e smoke test
+        run: ./scripts/e2e-smoke.sh
+
+  publish:
+    name: Publish images to GHCR
+    needs: [unit-tests, security, integration-tests, e2e-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/reportapi-engine:latest
+            ghcr.io/${{ github.repository_owner }}/reportapi-engine:${{ github.sha }}
+
+      - name: Build and push config-ui image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./config-ui
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/reportapi-config-ui:latest
+            ghcr.io/${{ github.repository_owner }}/reportapi-config-ui:${{ github.sha }}
