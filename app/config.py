@@ -43,5 +43,10 @@ class Settings(BaseSettings):
     license_tier: Literal["community", "paid"] = "community"
     license_key: str | None = None
 
+    # Config UI auth — if set, /api/config/* requires this as X-Config-Token.
+    # Unset by default for local dev; set it whenever the api port is
+    # reachable from anywhere other than your own machine.
+    config_api_token: str | None = None
+
 
 settings = Settings()

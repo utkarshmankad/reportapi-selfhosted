@@ -1,13 +1,15 @@
 """Config routes — backs the localhost-only config UI (Jira, LLM, test connection)."""
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.models.config import (
     JiraConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
 )
-from app.core.env_writer import upsert_env_values
+from app.core.env_writer import upsert_env_values, InvalidEnvValueError
+from app.core.ssrf_guard import assert_safe_url, UnsafeURLError
+from app.core.config_auth import require_config_token
 from app.config import settings
 
-router = APIRouter(prefix="/api/config", tags=["config"])
+router = APIRouter(prefix="/api/config", tags=["config"], dependencies=[Depends(require_config_token)])
 
 
 @router.get("", response_model=ConfigStatus)
@@ -24,9 +26,18 @@ async def get_config_status():
 
 @router.post("/jira/test", response_model=TestResult)
 async def test_jira_connection(request: JiraConfigRequest):
+    # Jira URL should always be a public Atlassian Cloud host — never a
+    # private/internal address, so no allow_private here.
+    try:
+        assert_safe_url(request.jira_url, allow_private=False)
+    except UnsafeURLError as e:
+        return TestResult(ok=False, detail=f"Refusing to test that URL: {e}")
+
     try:
         async with httpx.AsyncClient(
-            auth=(request.jira_email, request.jira_api_token), timeout=10.0
+            auth=(request.jira_email, request.jira_api_token),
+            timeout=10.0,
+            follow_redirects=False,
         ) as client:
             response = await client.get(f"{request.jira_url.rstrip('/')}/rest/api/3/myself")
         if response.status_code == 200:
@@ -38,11 +49,14 @@ async def test_jira_connection(request: JiraConfigRequest):
 
 @router.post("/jira", response_model=TestResult)
 async def save_jira_config(request: JiraConfigRequest):
-    upsert_env_values({
-        "JIRA_URL": request.jira_url,
-        "JIRA_EMAIL": request.jira_email,
-        "JIRA_API_TOKEN": request.jira_api_token,
-    })
+    try:
+        upsert_env_values({
+            "JIRA_URL": request.jira_url,
+            "JIRA_EMAIL": request.jira_email,
+            "JIRA_API_TOKEN": request.jira_api_token,
+        })
+    except InvalidEnvValueError as e:
+        return TestResult(ok=False, detail=str(e))
     return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
 
 
@@ -50,7 +64,7 @@ async def save_jira_config(request: JiraConfigRequest):
 async def test_llm_connection(request: LLMConfigRequest):
     try:
         if request.llm_provider == "openai":
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {request.api_key}"},
@@ -58,16 +72,22 @@ async def test_llm_connection(request: LLMConfigRequest):
                           "messages": [{"role": "user", "content": "ping"}]},
                 )
         elif request.llm_provider == "anthropic":
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
                     headers={"x-api-key": request.api_key, "anthropic-version": "2023-06-01"},
                     json={"model": "claude-sonnet-4-5", "max_tokens": 5,
                           "messages": [{"role": "user", "content": "ping"}]},
                 )
-        else:  # ollama
+        else:  # ollama — intentionally reachable on the private docker
+               # network, but still blocked from loopback/link-local/metadata.
             base_url = (request.ollama_base_url or settings.ollama_base_url).rstrip("/")
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                assert_safe_url(base_url, allow_private=True)
+            except UnsafeURLError as e:
+                return TestResult(ok=False, detail=f"Refusing to test that URL: {e}")
+
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                 response = await client.get(f"{base_url}/api/tags")
 
         if response.status_code == 200:
@@ -87,5 +107,8 @@ async def save_llm_config(request: LLMConfigRequest):
     elif request.llm_provider == "ollama" and request.ollama_base_url:
         values["OLLAMA_BASE_URL"] = request.ollama_base_url
 
-    upsert_env_values(values)
+    try:
+        upsert_env_values(values)
+    except InvalidEnvValueError as e:
+        return TestResult(ok=False, detail=str(e))
     return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
