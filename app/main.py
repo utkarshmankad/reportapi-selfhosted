@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.api.routes import health, report
+from fastapi.middleware.cors import CORSMiddleware
+from app.api.routes import health, report, schedule, template, config as config_routes
 from app.config import settings
 
 app = FastAPI(
@@ -8,8 +9,18 @@ app = FastAPI(
     description="Container-native reporting engine. Runs entirely on your infrastructure.",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8080"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(health.router)
 app.include_router(report.router)
+app.include_router(schedule.router)
+app.include_router(template.router)
+app.include_router(config_routes.router)
 
 
 @app.on_event("startup")

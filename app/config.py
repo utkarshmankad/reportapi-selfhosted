@@ -31,9 +31,17 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ollama_base_url: str = "http://ollama:11434"
 
+    # Vector DB
+    chroma_host: str = "chroma"
+    chroma_port: int = 8000
+
     # Report defaults
     max_tokens_output: int = 800
     report_retention_days: int = 7
+
+    # Licensing — Community tier needs no key; paid tiers check license_key
+    license_tier: Literal["community", "paid"] = "community"
+    license_key: str | None = None
 
 
 settings = Settings()

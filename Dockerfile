@@ -7,7 +7,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir poetry==1.8.3
+# WeasyPrint needs Pango/Cairo at runtime for PDF rendering (v0.4)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf2.0-0 \
+    libffi-dev shared-mime-info fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir poetry==2.4.1
 
 COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root --only main

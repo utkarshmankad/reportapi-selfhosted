@@ -19,7 +19,10 @@ dependencies = [
     "python-jose (>=3.5.0,<4.0.0)",
     "jinja2 (>=3.1.6,<4.0.0)",
     "httpx (>=0.28.1,<0.29.0)",
-    "psycopg2-binary (>=2.9.12,<3.0.0)"
+    "psycopg2-binary (>=2.9.12,<3.0.0)",
+    "croniter (>=6.2.4,<7.0.0)",
+    "chromadb (>=1.5.9,<2.0.0)",
+    "weasyprint (>=69.0,<70.0)"
 ]
 
 

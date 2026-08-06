@@ -1,0 +1,57 @@
+image:
+  repository: reportapi/engine
+  tag: "0.5.0"
+  pullPolicy: IfNotPresent
+
+configUiImage:
+  repository: reportapi/config-ui
+  tag: "0.5.0"
+  pullPolicy: IfNotPresent
+
+api:
+  replicaCount: 1
+  port: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+
+worker:
+  replicaCount: 1
+
+beat:
+  enabled: true
+
+configUi:
+  enabled: true
+  port: 8080
+
+postgresql:
+  enabled: true
+  auth:
+    username: reportapi
+    password: reportapi
+    database: reportapi
+
+redis:
+  enabled: true
+
+env:
+  APP_ENV: production
+  LOG_LEVEL: info
+  LLM_PROVIDER: openai
+
+envSecret:
+  # Populate via --set or a values override — never commit real values.
+  JIRA_URL: ""
+  JIRA_EMAIL: ""
+  JIRA_API_TOKEN: ""
+  OPENAI_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

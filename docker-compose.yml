@@ -24,6 +24,30 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  beat:
+    build: .
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  config-ui:
+    build: ./config-ui
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      # Runs client-side in the browser on the host, so it must point at
+      # the host-published api port, not the container network name.
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -43,5 +67,21 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
+  chroma:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 3 && ollama pull llama3.2 && wait"]
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  ollama_data:
+  chroma_data:

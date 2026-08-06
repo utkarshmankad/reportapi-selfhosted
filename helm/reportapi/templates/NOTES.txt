@@ -1,0 +1,17 @@
+ReportAPI Self-Hosted is installed.
+
+This chart assumes Postgres and Redis are reachable at:
+  {{ .Release.Name }}-postgresql:5432
+  {{ .Release.Name }}-redis-master:6379
+
+Pair it with the Bitnami postgresql and redis charts (add them under
+`dependencies:` in Chart.yaml) or point envSecret at externally managed
+instances before installing in production.
+
+Get the API URL:
+  kubectl port-forward svc/{{ include "reportapi.fullname" . }}-api 8000:{{ .Values.api.service.port }}
+
+{{- if .Values.configUi.enabled }}
+Get the config UI:
+  kubectl port-forward svc/{{ include "reportapi.fullname" . }}-config-ui 8080:{{ .Values.configUi.port }}
+{{- end }}

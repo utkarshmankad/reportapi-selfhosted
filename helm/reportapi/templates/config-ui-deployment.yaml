@@ -1,0 +1,45 @@
+{{- if .Values.configUi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "reportapi.fullname" . }}-config-ui
+  labels:
+    {{- include "reportapi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "reportapi.labels" . | nindent 6 }}
+      app.kubernetes.io/component: config-ui
+  template:
+    metadata:
+      labels:
+        {{- include "reportapi.labels" . | nindent 8 }}
+        app.kubernetes.io/component: config-ui
+    spec:
+      containers:
+        - name: config-ui
+          image: "{{ .Values.configUiImage.repository }}:{{ .Values.configUiImage.tag }}"
+          ports:
+            - containerPort: {{ .Values.configUi.port }}
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://{{ include "reportapi.fullname" . }}-api:{{ .Values.api.service.port }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "reportapi.fullname" . }}-config-ui
+  labels:
+    {{- include "reportapi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-ui
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.configUi.port }}
+      targetPort: {{ .Values.configUi.port }}
+  selector:
+    {{- include "reportapi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-ui
+{{- end }}
