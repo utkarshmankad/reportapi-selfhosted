@@ -1,9 +1,9 @@
 apiVersion: v2
 name: reportapi
-description: Container-native reporting engine for Agile ticket data — Jira/Asana connectors, pluggable LLM, PII stripping.
+description: Container-native reporting engine for Agile ticket data — Jira/Asana/GitHub connectors, pluggable LLM, PII stripping.
 type: application
-version: 0.5.1
-appVersion: "0.5.1"
+version: 0.5.2
+appVersion: "0.5.2"
 home: https://github.com/utkarshmankad/reportapi-selfhosted
 sources:
   - https://github.com/utkarshmankad/reportapi-selfhosted

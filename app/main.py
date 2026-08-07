@@ -5,7 +5,7 @@ from app.config import settings
 
 app = FastAPI(
     title="ReportAPI Self-Hosted",
-    version="0.5.1",
+    version="0.5.2",
     description="Container-native reporting engine. Runs entirely on your infrastructure.",
 )
 

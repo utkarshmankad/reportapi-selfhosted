@@ -2,6 +2,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.connectors.jira import JiraConnector
 from app.connectors.asana import AsanaConnector
+from app.connectors.github import GitHubConnector
 from app.core.pii import strip_pii_from_ticket
 from app.core.prompt_builder import build_prompt
 from app.llm.factory import get_llm_provider
@@ -27,7 +28,7 @@ async def generate_report(
     Fetch tickets, strip PII, generate a narrative, persist the report.
     Returns (report, ticket_count). Raises ReportGenerationError on any failure.
     """
-    connectors = {"jira": JiraConnector, "asana": AsanaConnector}
+    connectors = {"jira": JiraConnector, "asana": AsanaConnector, "github": GitHubConnector}
     if connector not in connectors:
         raise ReportGenerationError(
             400, f"Connector '{connector}' not supported. Available: {', '.join(connectors)}."

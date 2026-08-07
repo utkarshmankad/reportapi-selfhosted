@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Asana
     asana_pat: str | None = None
 
+    # GitHub Issues
+    github_pat: str | None = None
+
     # LLM
     llm_provider: Literal["openai", "anthropic", "ollama"] = "openai"
     openai_api_key: str | None = None

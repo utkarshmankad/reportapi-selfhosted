@@ -2,7 +2,7 @@
 import httpx
 from fastapi import APIRouter, Depends
 from app.models.config import (
-    JiraConfigRequest, AsanaConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
+    JiraConfigRequest, AsanaConfigRequest, GitHubConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
 )
 from app.core.env_writer import upsert_env_values, InvalidEnvValueError
 from app.core.ssrf_guard import assert_safe_url, UnsafeURLError
@@ -19,6 +19,7 @@ async def get_config_status():
         llm_provider=settings.llm_provider,
         jira_configured=bool(settings.jira_url and settings.jira_email and settings.jira_api_token),
         asana_configured=bool(settings.asana_pat),
+        github_configured=bool(settings.github_pat),
         openai_configured=bool(settings.openai_api_key),
         anthropic_configured=bool(settings.anthropic_api_key),
         ollama_base_url=settings.ollama_base_url,
@@ -82,6 +83,35 @@ async def test_asana_connection(request: AsanaConfigRequest):
 async def save_asana_config(request: AsanaConfigRequest):
     try:
         upsert_env_values({"ASANA_PAT": request.asana_pat})
+    except InvalidEnvValueError as e:
+        return TestResult(ok=False, detail=str(e))
+    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+
+
+@router.post("/github/test", response_model=TestResult)
+async def test_github_connection(request: GitHubConfigRequest):
+    # GitHub's API is a fixed host — no user-supplied URL, so no SSRF check needed.
+    try:
+        async with httpx.AsyncClient(
+            headers={
+                "Authorization": f"Bearer {request.github_pat}",
+                "Accept": "application/vnd.github+json",
+            },
+            timeout=10.0,
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("https://api.github.com/user")
+        if response.status_code == 200:
+            return TestResult(ok=True, detail="Connected to GitHub successfully.")
+        return TestResult(ok=False, detail=f"GitHub responded with status {response.status_code}.")
+    except Exception as e:
+        return TestResult(ok=False, detail=f"Could not reach GitHub: {str(e)}")
+
+
+@router.post("/github", response_model=TestResult)
+async def save_github_config(request: GitHubConfigRequest):
+    try:
+        upsert_env_values({"GITHUB_PAT": request.github_pat})
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
     return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")

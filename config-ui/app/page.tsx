@@ -169,6 +169,52 @@ function AsanaForm() {
   );
 }
 
+function GitHubForm() {
+  const [pat, setPat] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function call(path: string) {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ github_pat: pat }),
+      });
+      const data = await res.json();
+      setResult(data);
+    } catch (e: any) {
+      setResult({ ok: false, detail: e.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section style={styles.section}>
+      <h2 style={styles.h2}>GitHub Issues</h2>
+      <p style={styles.hint}>Connect a repo (or a milestone within one) you want reported on.</p>
+
+      <label style={styles.label}>Personal Access Token</label>
+      <input style={styles.input} type="password" placeholder="••••••••"
+        value={pat} onChange={(e) => setPat(e.target.value)} />
+
+      <div style={styles.row}>
+        <button style={styles.buttonSecondary} disabled={busy} onClick={() => call("/api/config/github/test")}>
+          Test connection
+        </button>
+        <button style={styles.button} disabled={busy} onClick={() => call("/api/config/github")}>
+          Save
+        </button>
+      </div>
+
+      {result && <div style={styles.result(result.ok)}>{result.detail}</div>}
+    </section>
+  );
+}
+
 function LLMForm() {
   const [provider, setProvider] = useState("openai");
   const [apiKey, setApiKey] = useState("");
@@ -287,14 +333,22 @@ function ScheduleForm() {
       <select style={styles.select} value={connector} onChange={(e) => setConnector(e.target.value)}>
         <option value="jira">Jira</option>
         <option value="asana">Asana</option>
+        <option value="github">GitHub Issues</option>
       </select>
 
-      <label style={styles.label}>{connector === "asana" ? "Project GID" : "Board key"}</label>
-      <input style={styles.input} placeholder={connector === "asana" ? "1201234567890" : "PROJ"}
+      <label style={styles.label}>
+        {connector === "asana" ? "Project GID" : connector === "github" ? "Repo (owner/repo)" : "Board key"}
+      </label>
+      <input style={styles.input}
+        placeholder={connector === "asana" ? "1201234567890" : connector === "github" ? "acme/widgets" : "PROJ"}
         value={boardId} onChange={(e) => setBoardId(e.target.value)} />
 
       <label style={styles.label}>
-        {connector === "asana" ? "Section GID (optional, overrides project)" : "Sprint ID (optional, overrides board)"}
+        {connector === "asana"
+          ? "Section GID (optional, overrides project)"
+          : connector === "github"
+          ? "Milestone number (optional, filters within repo)"
+          : "Sprint ID (optional, overrides board)"}
       </label>
       <input style={styles.input} value={sprintId} onChange={(e) => setSprintId(e.target.value)} />
 
@@ -323,9 +377,10 @@ export default function Home() {
   return (
     <main style={styles.page}>
       <h1 style={styles.h1}>ReportAPI setup</h1>
-      <p style={styles.sub}>Connect Jira or Asana, choose your LLM, and schedule reports — no terminal required.</p>
+      <p style={styles.sub}>Connect Jira, Asana, or GitHub Issues, choose your LLM, and schedule reports — no terminal required.</p>
       <JiraForm />
       <AsanaForm />
+      <GitHubForm />
       <LLMForm />
       <ScheduleForm />
     </main>

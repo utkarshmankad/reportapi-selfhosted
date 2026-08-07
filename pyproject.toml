@@ -1,6 +1,6 @@
 [project]
 name = "reportapi-selfhosted"
-version = "0.5.1"
+version = "0.5.2"
 description = ""
 authors = [
     {name = "utkarshmankad",email = "utkarsh.mankad@gmail.com"}
