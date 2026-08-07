@@ -28,6 +28,9 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+echo "Running migrations..."
+docker compose run --rm api alembic upgrade head
+
 echo "Waiting for api on :8000/health..."
 for i in $(seq 1 30); do
   if curl -sf http://localhost:8000/health > /tmp/health.json; then
