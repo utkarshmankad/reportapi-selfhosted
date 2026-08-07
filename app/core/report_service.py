@@ -1,6 +1,7 @@
 """Core report generation logic — shared by the API route and the Celery beat scheduler."""
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.connectors.jira import JiraConnector
+from app.connectors.asana import AsanaConnector
 from app.core.pii import strip_pii_from_ticket
 from app.core.prompt_builder import build_prompt
 from app.llm.factory import get_llm_provider
@@ -26,23 +27,24 @@ async def generate_report(
     Fetch tickets, strip PII, generate a narrative, persist the report.
     Returns (report, ticket_count). Raises ReportGenerationError on any failure.
     """
-    if connector != "jira":
+    connectors = {"jira": JiraConnector, "asana": AsanaConnector}
+    if connector not in connectors:
         raise ReportGenerationError(
-            400, f"Connector '{connector}' not supported in v0.1. Only 'jira' is available."
+            400, f"Connector '{connector}' not supported. Available: {', '.join(connectors)}."
         )
 
     if not board_id and not sprint_id:
         raise ReportGenerationError(422, "Either board_id or sprint_id is required")
 
     try:
-        jira = JiraConnector()
+        source = connectors[connector]()
     except ValueError as e:
         raise ReportGenerationError(500, str(e))
 
     try:
-        tickets = await jira.fetch({"board_id": board_id, "sprint_id": sprint_id})
+        tickets = await source.fetch({"board_id": board_id, "sprint_id": sprint_id})
     except Exception as e:
-        raise ReportGenerationError(502, f"Jira fetch failed: {str(e)}")
+        raise ReportGenerationError(502, f"{connector.capitalize()} fetch failed: {str(e)}")
 
     if not tickets:
         raise ReportGenerationError(422, "No tickets found for the given filter")

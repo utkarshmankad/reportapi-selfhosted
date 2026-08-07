@@ -2,7 +2,7 @@
 import httpx
 from fastapi import APIRouter, Depends
 from app.models.config import (
-    JiraConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
+    JiraConfigRequest, AsanaConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
 )
 from app.core.env_writer import upsert_env_values, InvalidEnvValueError
 from app.core.ssrf_guard import assert_safe_url, UnsafeURLError
@@ -18,6 +18,7 @@ async def get_config_status():
         app_env=settings.app_env,
         llm_provider=settings.llm_provider,
         jira_configured=bool(settings.jira_url and settings.jira_email and settings.jira_api_token),
+        asana_configured=bool(settings.asana_pat),
         openai_configured=bool(settings.openai_api_key),
         anthropic_configured=bool(settings.anthropic_api_key),
         ollama_base_url=settings.ollama_base_url,
@@ -55,6 +56,32 @@ async def save_jira_config(request: JiraConfigRequest):
             "JIRA_EMAIL": request.jira_email,
             "JIRA_API_TOKEN": request.jira_api_token,
         })
+    except InvalidEnvValueError as e:
+        return TestResult(ok=False, detail=str(e))
+    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+
+
+@router.post("/asana/test", response_model=TestResult)
+async def test_asana_connection(request: AsanaConfigRequest):
+    # Asana's API is a fixed host — no user-supplied URL, so no SSRF check needed.
+    try:
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {request.asana_pat}"},
+            timeout=10.0,
+            follow_redirects=False,
+        ) as client:
+            response = await client.get("https://app.asana.com/api/1.0/users/me")
+        if response.status_code == 200:
+            return TestResult(ok=True, detail="Connected to Asana successfully.")
+        return TestResult(ok=False, detail=f"Asana responded with status {response.status_code}.")
+    except Exception as e:
+        return TestResult(ok=False, detail=f"Could not reach Asana: {str(e)}")
+
+
+@router.post("/asana", response_model=TestResult)
+async def save_asana_config(request: AsanaConfigRequest):
+    try:
+        upsert_env_values({"ASANA_PAT": request.asana_pat})
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
     return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")

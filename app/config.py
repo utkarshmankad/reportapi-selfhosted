@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     jira_email: str | None = None
     jira_api_token: str | None = None
 
+    # Asana
+    asana_pat: str | None = None
+
     # LLM
     llm_provider: Literal["openai", "anthropic", "ollama"] = "openai"
     openai_api_key: str | None = None

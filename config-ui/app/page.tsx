@@ -123,6 +123,52 @@ function JiraForm() {
   );
 }
 
+function AsanaForm() {
+  const [pat, setPat] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function call(path: string) {
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asana_pat: pat }),
+      });
+      const data = await res.json();
+      setResult(data);
+    } catch (e: any) {
+      setResult({ ok: false, detail: e.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section style={styles.section}>
+      <h2 style={styles.h2}>Asana</h2>
+      <p style={styles.hint}>Connect a project (or a section within one) you want reported on.</p>
+
+      <label style={styles.label}>Personal Access Token</label>
+      <input style={styles.input} type="password" placeholder="••••••••"
+        value={pat} onChange={(e) => setPat(e.target.value)} />
+
+      <div style={styles.row}>
+        <button style={styles.buttonSecondary} disabled={busy} onClick={() => call("/api/config/asana/test")}>
+          Test connection
+        </button>
+        <button style={styles.button} disabled={busy} onClick={() => call("/api/config/asana")}>
+          Save
+        </button>
+      </div>
+
+      {result && <div style={styles.result(result.ok)}>{result.detail}</div>}
+    </section>
+  );
+}
+
 function LLMForm() {
   const [provider, setProvider] = useState("openai");
   const [apiKey, setApiKey] = useState("");
@@ -196,6 +242,7 @@ function LLMForm() {
 }
 
 function ScheduleForm() {
+  const [connector, setConnector] = useState("jira");
   const [boardId, setBoardId] = useState("");
   const [sprintId, setSprintId] = useState("");
   const [cron, setCron] = useState("0 9 * * 1");
@@ -211,7 +258,7 @@ function ScheduleForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          connector: "jira",
+          connector,
           board_id: boardId || null,
           sprint_id: sprintId || null,
           cron_expression: cron,
@@ -236,10 +283,19 @@ function ScheduleForm() {
       <h2 style={styles.h2}>Schedule</h2>
       <p style={styles.hint}>Reports generate automatically on this cadence via Celery beat.</p>
 
-      <label style={styles.label}>Board key</label>
-      <input style={styles.input} placeholder="PROJ" value={boardId} onChange={(e) => setBoardId(e.target.value)} />
+      <label style={styles.label}>Connector</label>
+      <select style={styles.select} value={connector} onChange={(e) => setConnector(e.target.value)}>
+        <option value="jira">Jira</option>
+        <option value="asana">Asana</option>
+      </select>
 
-      <label style={styles.label}>Sprint ID (optional, overrides board)</label>
+      <label style={styles.label}>{connector === "asana" ? "Project GID" : "Board key"}</label>
+      <input style={styles.input} placeholder={connector === "asana" ? "1201234567890" : "PROJ"}
+        value={boardId} onChange={(e) => setBoardId(e.target.value)} />
+
+      <label style={styles.label}>
+        {connector === "asana" ? "Section GID (optional, overrides project)" : "Sprint ID (optional, overrides board)"}
+      </label>
       <input style={styles.input} value={sprintId} onChange={(e) => setSprintId(e.target.value)} />
 
       <label style={styles.label}>Cron expression</label>
@@ -267,8 +323,9 @@ export default function Home() {
   return (
     <main style={styles.page}>
       <h1 style={styles.h1}>ReportAPI setup</h1>
-      <p style={styles.sub}>Connect Jira, choose your LLM, and schedule reports — no terminal required.</p>
+      <p style={styles.sub}>Connect Jira or Asana, choose your LLM, and schedule reports — no terminal required.</p>
       <JiraForm />
+      <AsanaForm />
       <LLMForm />
       <ScheduleForm />
     </main>

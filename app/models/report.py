@@ -5,7 +5,7 @@ from uuid import UUID
 
 
 class GenerateReportRequest(BaseModel):
-    connector: str          # "jira" only in v0.1
+    connector: str          # "jira" or "asana"
     board_id: str | None = None
     sprint_id: str | None = None
     output_format: Literal["text", "markdown", "pdf"] = "text"
