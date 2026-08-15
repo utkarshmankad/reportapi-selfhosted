@@ -18,7 +18,7 @@ class GitHubConfigRequest(BaseModel):
 
 
 class LLMConfigRequest(BaseModel):
-    llm_provider: Literal["openai", "anthropic", "ollama"]
+    llm_provider: Literal["openai", "anthropic", "ollama", "groq"]
     api_key: str | None = None
     ollama_base_url: str | None = None
 
@@ -37,3 +37,4 @@ class ConfigStatus(BaseModel):
     openai_configured: bool
     anthropic_configured: bool
     ollama_base_url: str
+    groq_configured: bool

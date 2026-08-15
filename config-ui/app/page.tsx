@@ -257,6 +257,7 @@ function LLMForm() {
       <select style={styles.select} value={provider} onChange={(e) => setProvider(e.target.value)}>
         <option value="openai">OpenAI</option>
         <option value="anthropic">Anthropic</option>
+        <option value="groq">Groq</option>
         <option value="ollama">Ollama (local)</option>
       </select>
 

@@ -2,6 +2,7 @@ from app.llm.base import LLMProvider
 from app.llm.openai_provider import OpenAIProvider
 from app.llm.anthropic_provider import AnthropicProvider
 from app.llm.ollama_provider import OllamaProvider
+from app.llm.groq_provider import GroqProvider
 from app.config import settings
 
 
@@ -12,6 +13,8 @@ def get_llm_provider() -> LLMProvider:
         return AnthropicProvider()
     if settings.llm_provider == "ollama":
         return OllamaProvider()
+    if settings.llm_provider == "groq":
+        return GroqProvider()
     raise NotImplementedError(
         f"LLM provider '{settings.llm_provider}' is not yet implemented."
     )

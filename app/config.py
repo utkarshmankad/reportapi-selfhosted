@@ -32,10 +32,11 @@ class Settings(BaseSettings):
     github_pat: str | None = None
 
     # LLM
-    llm_provider: Literal["openai", "anthropic", "ollama"] = "openai"
+    llm_provider: Literal["openai", "anthropic", "ollama", "groq"] = "openai"
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     ollama_base_url: str = "http://ollama:11434"
+    groq_api_key: str | None = None
 
     # Vector DB
     chroma_host: str = "chroma"

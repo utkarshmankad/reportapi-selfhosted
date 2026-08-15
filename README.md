@@ -23,7 +23,7 @@ replacing a manual standup writeup.
 ## Status
 
 v0.5.2 — Community release. Jira + Asana + GitHub Issues connectors ·
-OpenAI/Anthropic/Ollama · browser-based config UI · scheduled reports ·
+OpenAI/Anthropic/Groq/Ollama · browser-based config UI · scheduled reports ·
 PDF/Markdown output with custom templates · Helm chart. See
 [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help push this
 toward v1.
@@ -34,6 +34,7 @@ toward v1.
 - [Architecture](#architecture)
 - [Report generation flow](#report-generation-flow)
 - [Self-hosting on a local machine](#self-hosting-on-a-local-machine)
+- [Troubleshooting](#troubleshooting)
 - [Configuration reference](#configuration-reference)
 - [Using it](#using-it)
 - [Running fully offline (Ollama)](#running-fully-offline-ollama)
@@ -55,7 +56,7 @@ recurring chore. ReportAPI automates that chore:
 3. **Strip PII** from every ticket before it goes anywhere near a
    third-party API.
 4. **Generate** a narrative using an LLM provider you control the
-   choice of — OpenAI, Anthropic, or a fully local Ollama model with
+   choice of — OpenAI, Anthropic, Groq, or a fully local Ollama model with
    zero internet egress.
 5. **Render** the result as Markdown, plain text, or a PDF, optionally
    through a custom Jinja2 template.
@@ -241,6 +242,44 @@ docker compose down          # stop containers, keep data volumes
 docker compose down -v       # stop and wipe Postgres/Chroma/Ollama volumes
 ```
 
+## Troubleshooting
+
+**`docker: unknown command: docker compose`**
+Your Docker install has no Compose v2 plugin (common with Homebrew's
+CLI-only `docker` formula, or older standalone `docker-compose`
+installs). Fix:
+
+```bash
+brew install docker-compose
+mkdir -p ~/.docker/cli-plugins
+ln -sfn $(brew --prefix)/opt/docker-compose/bin/docker-compose \
+  ~/.docker/cli-plugins/docker-compose
+docker compose version   # should now print a version
+```
+
+Or install [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/),
+which bundles Compose v2 (and a daemon) out of the box. Note that the
+Homebrew `docker` CLI has no daemon either — you still need Docker
+Desktop, [Colima](https://github.com/abiosoft/colima), or OrbStack
+running before `docker compose up` will work.
+
+**`service "api" is not running`**
+`docker compose exec` only works while the stack is actually up. This
+means either `docker compose up --build` isn't running anymore
+(crashed, or you ran it and then closed the terminal), or it's running
+detached in a different terminal/session than the one you're running
+`exec` from. Fix:
+
+```bash
+docker compose ps            # see what's actually up
+docker compose up --build    # foreground — leave this terminal open,
+                              # or add -d to run detached
+```
+
+Run `docker compose exec api alembic upgrade head` from a **second**
+terminal (or after backgrounding with `-d`), once `docker compose ps`
+shows `api` as `running`/`healthy`.
+
 ## Configuration reference
 
 All variables live in `.env` (see [`.env.example`](.env.example) for
@@ -257,9 +296,10 @@ the canonical list).
 | `JIRA_API_TOKEN` | for Jira reports | — | [Atlassian API token](https://id.atlassian.com/manage-profile/security/api-tokens) |
 | `ASANA_PAT` | for Asana reports | — | [Asana Personal Access Token](https://app.asana.com/0/my-apps) |
 | `GITHUB_PAT` | for GitHub reports | — | [GitHub personal access token](https://github.com/settings/tokens) |
-| `LLM_PROVIDER` | yes | `openai` | `openai`, `anthropic`, or `ollama` |
+| `LLM_PROVIDER` | yes | `openai` | `openai`, `anthropic`, `groq`, or `ollama` |
 | `OPENAI_API_KEY` | if provider is `openai` | — | OpenAI API key |
 | `ANTHROPIC_API_KEY` | if provider is `anthropic` | — | Anthropic API key |
+| `GROQ_API_KEY` | if provider is `groq` | — | [Groq API key](https://console.groq.com/keys) |
 | `CONFIG_API_TOKEN` | recommended off-localhost | unset | If set, `/api/config/*` requires this value as the `X-Config-Token` header. Leave blank for pure localhost use; **set it** the moment port `8000` is reachable from anywhere other than your own machine |
 
 ## Using it
