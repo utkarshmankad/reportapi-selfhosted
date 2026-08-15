@@ -23,6 +23,7 @@ async def get_config_status():
         openai_configured=bool(settings.openai_api_key),
         anthropic_configured=bool(settings.anthropic_api_key),
         ollama_base_url=settings.ollama_base_url,
+        groq_configured=bool(settings.groq_api_key),
     )
 
 
@@ -136,6 +137,14 @@ async def test_llm_connection(request: LLMConfigRequest):
                     json={"model": "claude-sonnet-4-5", "max_tokens": 5,
                           "messages": [{"role": "user", "content": "ping"}]},
                 )
+        elif request.llm_provider == "groq":
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {request.api_key}"},
+                    json={"model": "llama-3.3-70b-versatile", "max_tokens": 5,
+                          "messages": [{"role": "user", "content": "ping"}]},
+                )
         else:  # ollama — intentionally reachable on the private docker
                # network, but still blocked from loopback/link-local/metadata.
             base_url = (request.ollama_base_url or settings.ollama_base_url).rstrip("/")
@@ -161,6 +170,8 @@ async def save_llm_config(request: LLMConfigRequest):
         values["OPENAI_API_KEY"] = request.api_key
     elif request.llm_provider == "anthropic" and request.api_key:
         values["ANTHROPIC_API_KEY"] = request.api_key
+    elif request.llm_provider == "groq" and request.api_key:
+        values["GROQ_API_KEY"] = request.api_key
     elif request.llm_provider == "ollama" and request.ollama_base_url:
         values["OLLAMA_BASE_URL"] = request.ollama_base_url
 
