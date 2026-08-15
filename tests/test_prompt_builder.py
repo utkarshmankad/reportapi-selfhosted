@@ -158,3 +158,35 @@ def test_tied_top_assignees_do_not_get_a_misleading_load_note():
     ]
     _, user_content = build_prompt(tickets, 800)
     assert "Load note" not in user_content
+
+
+def test_risk_reason_is_stated_not_just_the_tier():
+    t = _ticket(status="in_progress", priority="high", updated_at=NOW - timedelta(days=10),
+               title="Stale critical")
+    _, user_content = build_prompt([t], 800)
+    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [HIGH]"))
+    assert "stale 10d" in risk_line
+    assert "priority high" in risk_line
+
+
+def test_blocked_high_risk_reason_names_missing_priority():
+    t = _ticket(status="blocked", priority=None, title="Just blocked")
+    _, user_content = build_prompt([t], 800)
+    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [HIGH]"))
+    assert "no priority set" in risk_line
+
+
+def test_unassigned_count_reported_as_top_level_line():
+    tickets = [
+        _ticket(id="1", assignee="alice", status="todo"),
+        _ticket(id="2", assignee=None, status="todo"),
+        _ticket(id="3", assignee=None, status="todo"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Unassigned: 2 of 3 tickets (67%) have no assignee." in user_content
+
+
+def test_zero_unassigned_still_reports_the_line():
+    tickets = [_ticket(id="1", assignee="alice", status="todo")]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Unassigned: 0 of 1 tickets (0%) have no assignee." in user_content

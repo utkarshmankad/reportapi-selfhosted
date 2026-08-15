@@ -4,6 +4,7 @@ from app.connectors.jira import JiraConnector
 from app.connectors.asana import AsanaConnector
 from app.connectors.github import GitHubConnector
 from app.core.pii import strip_pii_from_ticket
+from app.models.ticket import Ticket
 from app.core.prompt_builder import build_prompt
 from app.llm.factory import get_llm_provider
 from app.db.models import Report
@@ -15,6 +16,22 @@ class ReportGenerationError(Exception):
         self.status_code = status_code
         self.detail = detail
         super().__init__(detail)
+
+
+def dedupe_tickets(tickets: list[Ticket]) -> list[Ticket]:
+    """
+    Connectors are the source of truth for ticket identity: same id means
+    same ticket, full stop. Collapse duplicates here — the layer closest to
+    the source data — rather than downstream where "is this the same ticket
+    twice or two different tickets" would have to be guessed at. Keeps the
+    most-recently-updated record for any id seen more than once.
+    """
+    deduped: dict[str, Ticket] = {}
+    for ticket in tickets:
+        existing = deduped.get(ticket.id)
+        if existing is None or ticket.updated_at > existing.updated_at:
+            deduped[ticket.id] = ticket
+    return list(deduped.values())
 
 
 async def generate_report(
@@ -49,6 +66,8 @@ async def generate_report(
 
     if not tickets:
         raise ReportGenerationError(422, "No tickets found for the given filter")
+
+    tickets = dedupe_tickets(tickets)
 
     for ticket in tickets:
         strip_pii_from_ticket(ticket)
