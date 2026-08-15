@@ -1,5 +1,4 @@
 """Core report generation logic — shared by the API route and the Celery beat scheduler."""
-import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.connectors.jira import JiraConnector
 from app.connectors.asana import AsanaConnector
@@ -10,8 +9,6 @@ from app.core.prompt_builder import build_prompt
 from app.llm.factory import get_llm_provider
 from app.db.models import Report
 from app.config import settings
-
-logger = logging.getLogger(__name__)
 
 
 class ReportGenerationError(Exception):
@@ -70,17 +67,7 @@ async def generate_report(
     if not tickets:
         raise ReportGenerationError(422, "No tickets found for the given filter")
 
-    raw_count = len(tickets)
-    raw_ids = [t.id for t in tickets]
     tickets = dedupe_tickets(tickets)
-
-    if len(tickets) != raw_count:
-        duplicate_ids = sorted({tid for tid in raw_ids if raw_ids.count(tid) > 1})
-        logger.warning(
-            "%s connector returned %d raw tickets, %d after dedup — "
-            "duplicate id(s) in source data: %s",
-            connector, raw_count, len(tickets), duplicate_ids,
-        )
 
     for ticket in tickets:
         strip_pii_from_ticket(ticket)
