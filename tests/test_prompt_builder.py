@@ -79,3 +79,82 @@ def test_system_prompt_bans_hedging_and_filler():
     system_prompt, _ = build_prompt([], 800)
     assert "never" in system_prompt.lower() or "must not" in system_prompt.lower()
     assert "800" in system_prompt
+
+
+def test_blocked_ticket_is_critical_risk_when_high_priority():
+    t = _ticket(status="blocked", priority="high", title="Blocked and urgent")
+    _, user_content = build_prompt([t], 800)
+    assert "[CRITICAL] Blocked and urgent" in user_content
+
+
+def test_blocked_ticket_is_high_risk_when_no_priority():
+    t = _ticket(status="blocked", priority=None, title="Just blocked")
+    _, user_content = build_prompt([t], 800)
+    assert "[HIGH] Just blocked" in user_content
+
+
+def test_stale_high_priority_ticket_is_high_risk():
+    t = _ticket(status="in_progress", priority="critical", updated_at=NOW - timedelta(days=10), title="Stale critical")
+    _, user_content = build_prompt([t], 800)
+    assert "[HIGH] Stale critical" in user_content
+
+
+def test_stale_low_priority_ticket_is_medium_risk():
+    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=10), title="Stale routine")
+    _, user_content = build_prompt([t], 800)
+    assert "[MEDIUM] Stale routine" in user_content
+
+
+def test_fresh_low_priority_ticket_is_not_a_risk():
+    t = _ticket(status="in_progress", priority=None, updated_at=NOW, title="Totally fine")
+    _, user_content = build_prompt([t], 800)
+    assert "Risk tickets (0):" in user_content
+    assert "Totally fine" not in user_content.split("Risk tickets")[1]
+
+
+def test_security_advisory_reference_flagged_as_risk_even_without_priority():
+    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=5),
+                title="RUSTSEC-2026-0235 openssl vuln")
+    _, user_content = build_prompt([t], 800)
+    assert "[HIGH] RUSTSEC-2026-0235 openssl vuln" in user_content
+
+
+def test_tracking_ticket_and_advisory_ticket_collapse_into_one_related_entry():
+    tracking = _ticket(id="1", title="Tracking: outstanding RustSec advisories",
+                       description="parent tracker for RUSTSEC-2026-0235")
+    advisory = _ticket(id="2", title="RUSTSEC-2026-0235 openssl vuln")
+    _, user_content = build_prompt([tracking, advisory], 800)
+    assert "RELATED (same underlying issue" in user_content
+    related_block = user_content.split("RELATED")[1]
+    assert "Tracking: outstanding RustSec advisories" in related_block
+    assert "RUSTSEC-2026-0235 openssl vuln" in related_block
+    # each ticket appears once in the group, not duplicated against itself
+    assert related_block.count("RUSTSEC-2026-0235 openssl vuln") == 1
+
+
+def test_single_ticket_referencing_advisory_id_has_no_related_section():
+    t = _ticket(title="RUSTSEC-2026-0235 openssl vuln", description="see RUSTSEC-2026-0235 for details")
+    _, user_content = build_prompt([t], 800)
+    assert "RELATED" not in user_content
+
+
+def test_uneven_assignee_load_flagged_for_unique_outlier():
+    tickets = [
+        _ticket(id="1", assignee="alice", status="todo"),
+        _ticket(id="2", assignee="alice", status="todo"),
+        _ticket(id="3", assignee="alice", status="todo"),
+        _ticket(id="4", assignee="bob", status="todo"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Load note: alice has 3 ticket(s)" in user_content
+
+
+def test_tied_top_assignees_do_not_get_a_misleading_load_note():
+    tickets = [
+        _ticket(id="1", assignee="alice", status="todo"),
+        _ticket(id="2", assignee="alice", status="todo"),
+        _ticket(id="3", assignee="bob", status="todo"),
+        _ticket(id="4", assignee="bob", status="todo"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Load note" not in user_content
