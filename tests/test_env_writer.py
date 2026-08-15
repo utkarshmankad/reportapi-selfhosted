@@ -27,3 +27,6 @@ def test_writes_owner_only_permissions(tmp_path, monkeypatch):
 def test_allowed_keys_cover_jira_and_llm():
     assert "JIRA_API_TOKEN" in ALLOWED_KEYS
     assert "OPENAI_API_KEY" in ALLOWED_KEYS
+    assert "ANTHROPIC_API_KEY" in ALLOWED_KEYS
+    assert "OLLAMA_BASE_URL" in ALLOWED_KEYS
+    assert "GROQ_API_KEY" in ALLOWED_KEYS
