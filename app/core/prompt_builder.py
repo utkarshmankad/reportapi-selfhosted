@@ -9,8 +9,18 @@ HIGH_PRIORITY_VALUES = {"high", "critical", "p0", "p1"}
 
 # Cross-references that mark two tickets as the same underlying issue
 # (e.g. a tracking ticket plus the specific advisory it tracks) so they
-# collapse into one risk entry instead of double-counting.
+# collapse into one risk entry instead of double-counting. Deliberately
+# broad — includes bare "#123" issue links — because for de-duplication
+# purposes any shared reference is worth surfacing.
 _XREF_PATTERN = re.compile(r"RUSTSEC-\d{4}-\d+|CVE-\d{4}-\d+|#\d+", re.IGNORECASE)
+
+# Security-advisory identifiers only. Deliberately NARROWER than
+# _XREF_PATTERN: a bare "#123" is just an issue cross-reference (e.g.
+# "duplicate of #123", "blocks #456") and says nothing about security —
+# using the broad xref pattern here previously mislabeled ordinary
+# feature/bugfix tickets as security advisories any time their
+# description happened to link another issue.
+_SECURITY_ADVISORY_PATTERN = re.compile(r"RUSTSEC-\d{4}-\d+|CVE-\d{4}-\d+", re.IGNORECASE)
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior engineering analyst writing a status report for a \
 director. The director reads dozens of these — they want facts they can act \
@@ -70,7 +80,7 @@ def _is_high_priority(priority: str | None) -> bool:
 def _is_security(t: Ticket) -> bool:
     if any("security" in label.lower() for label in t.labels):
         return True
-    return bool(_XREF_PATTERN.search(t.title) or _XREF_PATTERN.search(t.description or ""))
+    return bool(_SECURITY_ADVISORY_PATTERN.search(t.title) or _SECURITY_ADVISORY_PATTERN.search(t.description or ""))
 
 
 def _risk_tier_and_reason(t: Ticket, is_stale: bool, stale_days: int) -> tuple[str, str] | None:
