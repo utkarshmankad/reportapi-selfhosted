@@ -1,0 +1,81 @@
+from datetime import datetime, timedelta, timezone
+from app.models.ticket import Ticket
+from app.core.prompt_builder import build_prompt
+
+NOW = datetime.now(timezone.utc)
+
+
+def _ticket(**overrides):
+    defaults = dict(
+        id="1", title="Some task", description="", status="in_progress",
+        assignee="alice", priority=None, labels=[], created_at=NOW,
+        updated_at=NOW, sprint=None, url="https://example.com",
+    )
+    defaults.update(overrides)
+    return Ticket(**defaults)
+
+
+def test_status_counts_are_computed_verbatim():
+    tickets = [
+        _ticket(id="1", status="done"),
+        _ticket(id="2", status="done"),
+        _ticket(id="3", status="blocked"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Total tickets: 3 (blocked: 1, done: 2)" in user_content
+
+
+def test_blocked_section_lists_only_blocked_tickets():
+    tickets = [
+        _ticket(id="1", title="Blocked thing", status="blocked", assignee="bob"),
+        _ticket(id="2", title="Not blocked", status="in_progress"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Blocked tickets (1):" in user_content
+    assert "- Blocked thing (assignee: bob)" in user_content
+    assert "Not blocked" not in user_content.split("Blocked tickets")[1]
+
+
+def test_no_blocked_tickets_says_none():
+    tickets = [_ticket(status="in_progress")]
+    _, user_content = build_prompt(tickets, 800)
+    assert "Blocked tickets (0):" in user_content
+    assert "- None." in user_content
+
+
+def test_stale_ticket_is_flagged():
+    stale = _ticket(id="1", status="in_progress", updated_at=NOW - timedelta(days=5))
+    fresh = _ticket(id="2", status="in_progress", updated_at=NOW)
+    _, user_content = build_prompt([stale, fresh], 800)
+    lines = user_content.splitlines()
+    stale_line = next(l for l in lines if "id" not in l and "last updated 5d ago" in l)
+    fresh_line = next(l for l in lines if "last updated 0d ago" in l)
+    assert "STALE" in stale_line
+    assert "STALE" not in fresh_line
+
+
+def test_done_ticket_never_flagged_stale_regardless_of_age():
+    old_done = _ticket(status="done", updated_at=NOW - timedelta(days=30))
+    _, user_content = build_prompt([old_done], 800)
+    assert "STALE" not in user_content
+
+
+def test_assignee_breakdown_lists_owned_titles():
+    tickets = [
+        _ticket(id="1", title="Task A", assignee="alice", status="in_progress"),
+        _ticket(id="2", title="Task B", assignee="alice", status="done"),
+    ]
+    _, user_content = build_prompt(tickets, 800)
+    assert "- alice: 2 ticket(s) — Task A (in_progress); Task B (done)" in user_content
+
+
+def test_unassigned_tickets_note_no_assignee():
+    tickets = [_ticket(assignee=None)]
+    _, user_content = build_prompt(tickets, 800)
+    assert "- No tickets have an assignee." in user_content
+
+
+def test_system_prompt_bans_hedging_and_filler():
+    system_prompt, _ = build_prompt([], 800)
+    assert "never" in system_prompt.lower() or "must not" in system_prompt.lower()
+    assert "800" in system_prompt
