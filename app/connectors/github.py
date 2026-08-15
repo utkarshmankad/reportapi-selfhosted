@@ -92,7 +92,13 @@ class GitHubConnector(Connector):
             hint = LABEL_STATUS_HINTS.get(label.strip().lower())
             if hint:
                 return hint
-        return "done" if issue.get("state") == "closed" else "todo"
+        if issue.get("state") == "closed":
+            return "done"
+        # GitHub issues have no native "in progress" state. An open issue
+        # with an assignee and no explicit status label is being worked,
+        # not sitting untouched — treat it as in_progress rather than
+        # lumping active work into "todo".
+        return "in_progress" if issue.get("assignee") else "todo"
 
     @staticmethod
     def _extract_priority(labels: list[str]) -> str | None:
