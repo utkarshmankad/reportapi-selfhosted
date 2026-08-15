@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from croniter import croniter
 from sqlalchemy import select
 from app.worker.celery_app import celery_app
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, engine
 from app.db.models import Schedule
 from app.core.report_service import generate_report, ReportGenerationError
 
@@ -46,6 +46,19 @@ async def _run_due_schedules() -> int:
     return ran
 
 
+async def _run_due_schedules_and_dispose() -> int:
+    # `engine` is a module-level singleton whose asyncpg pool binds to the
+    # event loop it first opens connections under. Each task invocation
+    # runs in a brand-new loop (asyncio.run below), so pooled connections
+    # from the previous run belong to an already-closed loop and blow up
+    # with "attached to a different loop". Disposing forces a fresh pool
+    # next run, tied to that run's own loop.
+    try:
+        return await _run_due_schedules()
+    finally:
+        await engine.dispose()
+
+
 @celery_app.task(name="app.worker.tasks.run_due_schedules")
 def run_due_schedules() -> int:
-    return asyncio.run(_run_due_schedules())
+    return asyncio.run(_run_due_schedules_and_dispose())
