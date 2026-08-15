@@ -190,3 +190,29 @@ def test_zero_unassigned_still_reports_the_line():
     tickets = [_ticket(id="1", assignee="alice", status="todo")]
     _, user_content = build_prompt(tickets, 800)
     assert "Unassigned: 0 of 1 tickets (0%) have no assignee." in user_content
+
+
+def test_bare_issue_reference_is_not_mislabeled_as_security_advisory():
+    # Regression: a ticket that just links another issue ("duplicate of
+    # #123", "fixes #456") is not a security advisory. The xref pattern
+    # used for RELATED-ticket grouping must not double as the security
+    # detector, or ordinary feature/bugfix tickets get tagged as advisories.
+    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=5),
+               title="Add CancelRequest support", description="fixes #999, related to #888")
+    _, user_content = build_prompt([t], 800)
+    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [MEDIUM]"))
+    assert "security advisory" not in risk_line.lower()
+    assert "no priority/security signal" in risk_line
+
+
+def test_only_real_advisory_ids_are_flagged_security_among_mixed_tickets():
+    unrelated = _ticket(id="1", status="in_progress", priority=None, title="Mask serving workers",
+                        description="see also #123", updated_at=NOW - timedelta(days=10))
+    real_advisory = _ticket(id="2", status="in_progress", priority="high", title="RUSTSEC-2026-0235 openssl vuln",
+                            updated_at=NOW - timedelta(days=10))
+    _, user_content = build_prompt([unrelated, real_advisory], 800)
+    risk_block = user_content.split("Risk tickets")[1]
+    unrelated_line = next(l for l in risk_block.splitlines() if "Mask serving workers" in l)
+    advisory_line = next(l for l in risk_block.splitlines() if "RUSTSEC-2026-0235" in l)
+    assert "security advisory" not in unrelated_line.lower()
+    assert "security advisory" in advisory_line
