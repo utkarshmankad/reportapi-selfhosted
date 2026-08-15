@@ -38,10 +38,16 @@ claim if the input doesn't flag one.
 - "Stale" means no update in {stale_days}+ days — the input marks this for \
 you per ticket. Use that exact definition; don't redefine it.
 - Risk section (required): list every ticket the input marks with a risk \
-tier (CRITICAL / HIGH / MEDIUM), grouped by tier, CRITICAL first, each with \
-a one-line reason. Two tickets referencing the same tracking ID or advisory \
-(the input marks these as RELATED) are ONE risk entry, not two — merge them. \
-If the input marks no risk tickets, say so in one sentence.
+tier (CRITICAL / HIGH / MEDIUM), grouped by tier, CRITICAL first. Use the \
+exact reason given in the input for each — never assert a tier without \
+restating its reason (e.g. "HIGH — stale 10d, security advisory", not just \
+"HIGH"). Two tickets referencing the same tracking ID or advisory (the \
+input marks these as RELATED) are ONE risk entry, not two — merge them. If \
+the input marks no risk tickets, say so in one sentence.
+- Ownership gap (required if the input's "Unassigned" line has a nonzero \
+count): report it as its own risk-level line, not folded into the assignee \
+paragraph — e.g. "N of M tickets (X%) have no assignee." A large unowned \
+share is itself a risk to call out, not a footnote.
 - No closing summary paragraph. End after the risk section.
 - Maximum length: {{max_tokens}} tokens.
 """.format(stale_days=STALE_DAYS_THRESHOLD, max_tokens="{max_tokens}")
@@ -67,13 +73,23 @@ def _is_security(t: Ticket) -> bool:
     return bool(_XREF_PATTERN.search(t.title) or _XREF_PATTERN.search(t.description or ""))
 
 
-def _risk_tier(t: Ticket, is_stale: bool) -> str | None:
+def _risk_tier_and_reason(t: Ticket, is_stale: bool, stale_days: int) -> tuple[str, str] | None:
+    security = _is_security(t)
+    high_pri = _is_high_priority(t.priority)
+
     if t.status == "blocked":
-        return "CRITICAL" if (_is_high_priority(t.priority) or _is_security(t)) else "HIGH"
-    if is_stale and (_is_high_priority(t.priority) or _is_security(t)):
-        return "HIGH"
+        if high_pri or security:
+            reason = "blocked" + (", security advisory" if security else f", priority {t.priority}")
+            return "CRITICAL", reason
+        return "HIGH", "blocked, no priority set"
+
+    if is_stale and (high_pri or security):
+        reason = f"stale {stale_days}d" + (", security advisory" if security else f", priority {t.priority}")
+        return "HIGH", reason
+
     if is_stale:
-        return "MEDIUM"
+        return "MEDIUM", f"stale {stale_days}d, no priority/security signal"
+
     return None
 
 
@@ -97,14 +113,12 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
 
     lines = [f"Total tickets: {len(tickets)} ({counts_line})", ""]
 
-    stale_by_id: dict[str, bool] = {}
-    risk_by_id: dict[str, str] = {}
+    risk_by_id: dict[str, tuple[str, str]] = {}
 
     lines.append("Tickets:")
     for t in tickets:
         stale_days = _days_since(t.updated_at)
         is_stale = stale_days >= STALE_DAYS_THRESHOLD and t.status in ("in_progress", "blocked")
-        stale_by_id[t.id] = is_stale
 
         line = f"- [{t.status.upper()}] {t.title}"
         if t.assignee:
@@ -115,10 +129,11 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
         if is_stale:
             line += f" | STALE (no update >= {STALE_DAYS_THRESHOLD}d)"
 
-        tier = _risk_tier(t, is_stale)
-        if tier:
-            risk_by_id[t.id] = tier
-            line += f" | RISK: {tier}"
+        tier_reason = _risk_tier_and_reason(t, is_stale, stale_days)
+        if tier_reason:
+            tier, reason = tier_reason
+            risk_by_id[t.id] = tier_reason
+            line += f" | RISK: {tier} ({reason})"
 
         lines.append(line)
 
@@ -128,6 +143,11 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
         if t.assignee:
             assignee_map[t.assignee].append(t)
 
+    unassigned_count = len(tickets) - sum(len(v) for v in assignee_map.values())
+    unassigned_pct = round(100 * unassigned_count / len(tickets)) if tickets else 0
+    lines.append(f"Unassigned: {unassigned_count} of {len(tickets)} tickets ({unassigned_pct}%) have no assignee.")
+
+    lines.append("")
     lines.append("By assignee:")
     if assignee_map:
         for assignee, owned in sorted(assignee_map.items()):
@@ -159,9 +179,9 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
     if risk_by_id:
         tier_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
         by_id = {t.id: t for t in tickets}
-        for tid, tier in sorted(risk_by_id.items(), key=lambda kv: tier_order[kv[1]]):
+        for tid, (tier, reason) in sorted(risk_by_id.items(), key=lambda kv: tier_order[kv[1][0]]):
             t = by_id[tid]
-            lines.append(f"- [{tier}] {t.title} (assignee: {t.assignee or 'unassigned'})")
+            lines.append(f"- [{tier}] {t.title} (assignee: {t.assignee or 'unassigned'}) — {reason}")
     else:
         lines.append("- None.")
 
