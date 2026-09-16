@@ -1,9 +1,11 @@
 """Integration test — real Postgres, real FastAPI app via ASGI transport,
 no mocking. Exercises the Schedule CRUD path end to end.
 """
-import pytest
+
 import httpx
+import pytest
 from httpx import ASGITransport
+
 from app.main import app
 
 pytestmark = pytest.mark.integration
@@ -13,12 +15,15 @@ pytestmark = pytest.mark.integration
 async def test_create_list_delete_schedule():
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        create_res = await client.post("/api/schedule", json={
-            "connector": "jira",
-            "board_id": "PROJ",
-            "cron_expression": "0 9 * * 1",
-            "output_format": "text",
-        })
+        create_res = await client.post(
+            "/api/schedule",
+            json={
+                "connector": "jira",
+                "board_id": "PROJ",
+                "cron_expression": "0 9 * * 1",
+                "output_format": "text",
+            },
+        )
         assert create_res.status_code == 200
         schedule = create_res.json()
         assert schedule["board_id"] == "PROJ"
@@ -39,11 +44,14 @@ async def test_create_list_delete_schedule():
 async def test_rejects_invalid_cron_expression():
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.post("/api/schedule", json={
-            "connector": "jira",
-            "board_id": "PROJ",
-            "cron_expression": "not a cron",
-        })
+        res = await client.post(
+            "/api/schedule",
+            json={
+                "connector": "jira",
+                "board_id": "PROJ",
+                "cron_expression": "not a cron",
+            },
+        )
         assert res.status_code == 422
 
 
@@ -51,8 +59,11 @@ async def test_rejects_invalid_cron_expression():
 async def test_rejects_missing_board_and_sprint():
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.post("/api/schedule", json={
-            "connector": "jira",
-            "cron_expression": "0 9 * * 1",
-        })
+        res = await client.post(
+            "/api/schedule",
+            json={
+                "connector": "jira",
+                "cron_expression": "0 9 * * 1",
+            },
+        )
         assert res.status_code == 422

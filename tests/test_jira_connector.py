@@ -1,6 +1,7 @@
+import httpx
 import pytest
 import respx
-import httpx
+
 from app.connectors.jira import JiraConnector
 
 
@@ -15,10 +16,13 @@ def mock_jira_search_response():
                     "description": {
                         "type": "doc",
                         "content": [
-                            {"type": "paragraph", "content": [
-                                {"type": "text", "text": "Users cannot log in on Safari"}
-                            ]}
-                        ]
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {"type": "text", "text": "Users cannot log in on Safari"}
+                                ],
+                            }
+                        ],
                     },
                     "status": {"name": "In Progress"},
                     "assignee": {"displayName": "Jane Doe"},
@@ -27,7 +31,7 @@ def mock_jira_search_response():
                     "created": "2026-05-01T10:00:00.000+0000",
                     "updated": "2026-05-02T10:00:00.000+0000",
                     "sprint": [{"name": "Sprint 14"}],
-                }
+                },
             }
         ]
     }

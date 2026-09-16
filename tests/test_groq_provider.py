@@ -1,6 +1,7 @@
+import httpx
 import pytest
 import respx
-import httpx
+
 from app.llm.groq_provider import GroqProvider
 
 
@@ -10,10 +11,13 @@ async def test_generate_returns_text_and_tokens(monkeypatch):
     monkeypatch.setattr("app.config.settings.groq_api_key", "fake-key")
 
     respx.post("https://api.groq.com/openai/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json={
-            "choices": [{"message": {"content": "Sprint velocity increased 12%."}}],
-            "usage": {"total_tokens": 245},
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "Sprint velocity increased 12%."}}],
+                "usage": {"total_tokens": 245},
+            },
+        )
     )
 
     provider = GroqProvider()

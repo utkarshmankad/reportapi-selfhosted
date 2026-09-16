@@ -1,6 +1,7 @@
+import httpx
 import pytest
 import respx
-import httpx
+
 from app.llm.anthropic_provider import AnthropicProvider
 
 
@@ -10,10 +11,13 @@ async def test_generate_returns_text_and_tokens(monkeypatch):
     monkeypatch.setattr("app.config.settings.anthropic_api_key", "fake-key")
 
     respx.post("https://api.anthropic.com/v1/messages").mock(
-        return_value=httpx.Response(200, json={
-            "content": [{"type": "text", "text": "Sprint velocity increased 12%."}],
-            "usage": {"input_tokens": 200, "output_tokens": 45},
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": "Sprint velocity increased 12%."}],
+                "usage": {"input_tokens": 200, "output_tokens": 45},
+            },
+        )
     )
 
     provider = AnthropicProvider()

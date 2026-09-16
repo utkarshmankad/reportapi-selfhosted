@@ -1,58 +1,27 @@
 #!/usr/bin/env bash
-# End-to-end smoke test: boots the real docker compose stack and checks that
-# every container comes up healthy and the API answers over HTTP. Does not
-# call Jira/OpenAI/Anthropic — those need real credentials this script
-# doesn't have, so it only proves the stack itself wires together correctly.
+# Isolated project, synthetic credentials, and its own volumes. Never read .env.
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
-
+project="reportapi-ci-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$"
+compose=(docker compose --env-file /dev/null -p "$project" -f docker-compose.ci.yml)
 cleanup() {
-  echo "--- docker compose logs (last 100 lines) ---"
-  docker compose logs --tail=100 || true
-  docker compose down -v --remove-orphans || true
+  result=$?
+  if [ "$result" -ne 0 ]; then "${compose[@]}" logs --tail=100 || true; fi
+  "${compose[@]}" down -v --remove-orphans || true
+  exit "$result"
 }
 trap cleanup EXIT
-
-cp -n .env.example .env || true
-# CI has no real Jira/LLM creds; the smoke test only needs the stack to boot.
-echo "DATABASE_URL=postgresql+asyncpg://reportapi:reportapi@postgres:5432/reportapi" >> .env
-echo "REDIS_URL=redis://redis:6379/0" >> .env
-
-docker compose up --build -d api worker beat postgres redis config-ui
-
-echo "Waiting for postgres to report healthy..."
-for i in $(seq 1 30); do
-  status=$(docker compose ps postgres --format json | python3 -c "import json,sys; print(json.load(sys.stdin).get('Health',''))" 2>/dev/null || echo "")
-  if [ "$status" = "healthy" ]; then break; fi
-  sleep 2
-done
-
-echo "Running migrations..."
-docker compose run --rm api alembic upgrade head
-
-echo "Waiting for api on :8000/health..."
-for i in $(seq 1 30); do
-  if curl -sf http://localhost:8000/health > /tmp/health.json; then
-    echo "api responded:"
-    cat /tmp/health.json
-    break
-  fi
-  sleep 2
-done
-
-if ! grep -q '"status"' /tmp/health.json 2>/dev/null; then
-  echo "FAIL: api never became healthy"
-  exit 1
-fi
-
-echo "Checking config UI on :8080..."
-if ! curl -sf http://localhost:8080 > /dev/null; then
-  echo "FAIL: config-ui did not respond on :8080"
-  exit 1
-fi
-
-echo "Checking /api/schedule responds (no creds needed)..."
-curl -sf http://localhost:8000/api/schedule > /dev/null
-
-echo "E2E smoke test passed."
+"${compose[@]}" up --build -d postgres redis upstream api worker beat config-ui
+"${compose[@]}" run --rm api alembic upgrade head
+wait_http() {
+  for _ in $(seq 1 60); do
+    if curl --max-time 3 -fsS "$1" > /dev/null; then return 0; fi
+    sleep 2
+  done
+  echo "Service did not become ready: $1" >&2
+  return 1
+}
+wait_http http://127.0.0.1:18000/health
+wait_http http://127.0.0.1:18080
+"${compose[@]}" exec -T api python - < scripts/smoke_check.py
+SMOKE_UI_URL=http://127.0.0.1:18080 npm --prefix config-ui run test:e2e

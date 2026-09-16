@@ -11,3 +11,12 @@ htmlcov/
 .coverage
 alembic/versions/__pycache__/
 *.db
+
+coverage.xml
+.coverage.*
+config-ui/coverage/
+config-ui/playwright-report/
+config-ui/test-results/
+*.tsbuildinfo
+runtime-config.env
+runtime-config.lock

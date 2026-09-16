@@ -1,0 +1,63 @@
+# Standalone test stack: no developer env file, bind mounts, or production volumes.
+x-app: &app
+  build: .
+  environment: &environment
+    DATABASE_URL: postgresql+asyncpg://reportapi:reportapi@postgres:5432/reportapi
+    REDIS_URL: redis://redis:6379/0
+    CONFIG_API_TOKEN: smoke-test-token
+    CONFIG_STORE_PATH: /config/runtime.env
+    JIRA_URL: http://upstream:8090
+    JIRA_EMAIL: test@example.com
+    JIRA_API_TOKEN: synthetic
+    LLM_PROVIDER: ollama
+    OLLAMA_BASE_URL: http://upstream:8090
+  volumes:
+    - ci_config:/config
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    upstream:
+      condition: service_started
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reportapi
+      POSTGRES_PASSWORD: reportapi
+      POSTGRES_DB: reportapi
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reportapi']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  upstream:
+    image: python:3.12-slim
+    command: python /mock/upstream.py
+    volumes:
+      - ./scripts/smoke_upstream.py:/mock/upstream.py:ro
+  api:
+    <<: *app
+    ports: ['127.0.0.1:18000:8000']
+  worker:
+    <<: *app
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=1
+  beat:
+    <<: *app
+    command: celery -A app.worker.celery_app beat --loglevel=info
+  config-ui:
+    build: ./config-ui
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports: ['127.0.0.1:18080:8080']
+    depends_on: [api]
+volumes:
+  ci_config:

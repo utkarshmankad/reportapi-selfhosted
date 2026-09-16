@@ -1,8 +1,10 @@
 """Jira connector."""
+
 import httpx
+
+from app.config import settings
 from app.connectors.base import Connector
 from app.models.ticket import Ticket
-from app.config import settings
 
 STATUS_MAP = {
     "To Do": "todo",
@@ -45,7 +47,7 @@ class JiraConnector(Connector):
                     "jql": jql,
                     "maxResults": 100,
                     "fields": "summary,description,status,assignee,priority,"
-                              "labels,created,updated,sprint",
+                    "labels,created,updated,sprint",
                 },
             )
             response.raise_for_status()
@@ -56,19 +58,21 @@ class JiraConnector(Connector):
             fields = issue["fields"]
             raw_status = fields["status"]["name"]
 
-            tickets.append(Ticket(
-                id=issue["key"],
-                title=fields.get("summary", ""),
-                description=self._extract_description(fields.get("description")),
-                status=STATUS_MAP.get(raw_status, "todo"),
-                assignee=(fields.get("assignee") or {}).get("displayName"),
-                priority=(fields.get("priority") or {}).get("name"),
-                labels=fields.get("labels", []),
-                created_at=fields["created"],
-                updated_at=fields["updated"],
-                sprint=self._extract_sprint_name(fields.get("sprint")),
-                url=f"{self.base_url}/browse/{issue['key']}",
-            ))
+            tickets.append(
+                Ticket(
+                    id=issue["key"],
+                    title=fields.get("summary", ""),
+                    description=self._extract_description(fields.get("description")),
+                    status=STATUS_MAP.get(raw_status, "todo"),
+                    assignee=(fields.get("assignee") or {}).get("displayName"),
+                    priority=(fields.get("priority") or {}).get("name"),
+                    labels=fields.get("labels", []),
+                    created_at=fields["created"],
+                    updated_at=fields["updated"],
+                    sprint=self._extract_sprint_name(fields.get("sprint")),
+                    url=f"{self.base_url}/browse/{issue['key']}",
+                )
+            )
 
         return tickets
 
@@ -80,6 +84,7 @@ class JiraConnector(Connector):
             return description_field
         # Jira Cloud returns Atlassian Document Format (ADF) — extract plain text
         text_parts = []
+
         def walk(node):
             if isinstance(node, dict):
                 if node.get("type") == "text":
@@ -89,6 +94,7 @@ class JiraConnector(Connector):
             elif isinstance(node, list):
                 for item in node:
                     walk(item)
+
         walk(description_field)
         return " ".join(text_parts)
 

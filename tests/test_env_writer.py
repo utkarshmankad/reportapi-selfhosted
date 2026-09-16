@@ -1,5 +1,6 @@
 import pytest
-from app.core.env_writer import upsert_env_values, InvalidEnvValueError, ALLOWED_KEYS
+
+from app.core.env_writer import ALLOWED_KEYS, InvalidEnvValueError, upsert_env_values
 
 
 def test_rejects_non_allowed_key(tmp_path, monkeypatch):

@@ -1,15 +1,22 @@
 """Report generation routes."""
+
 from uuid import UUID
-from fastapi import APIRouter, HTTPException, Depends, Response
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.report import GenerateReportRequest, GenerateReportResponse
-from app.core.report_service import generate_report, ReportGenerationError
-from app.core.template_renderer import (
-    render_template, render_markdown, TemplateRenderError, DEFAULT_TEMPLATE,
-)
+
 from app.core.pdf_renderer import render_pdf
-from app.db.session import get_db
+from app.core.report_service import ReportGenerationError, generate_report
+from app.core.template_renderer import (
+    DEFAULT_TEMPLATE,
+    TemplateRenderError,
+    render_markdown,
+    render_template,
+)
 from app.db.models import Report, ReportTemplate
+from app.db.session import get_db
+from app.models.report import GenerateReportRequest, GenerateReportResponse, ReportResponse
 
 router = APIRouter(prefix="/api", tags=["report"])
 
@@ -19,6 +26,8 @@ async def generate_report_route(
     request: GenerateReportRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    if request.template_id:
+        raise HTTPException(status_code=422, detail="Select templates on the render endpoint")
     try:
         report, ticket_count = await generate_report(
             db=db,
@@ -79,3 +88,30 @@ async def render_report(
         )
 
     raise HTTPException(status_code=422, detail="format must be text, markdown, or pdf")
+
+
+@router.get("/reports", response_model=list[ReportResponse])
+async def list_reports(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Report).order_by(Report.created_at.desc(), Report.id).offset(offset).limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.get("/report/{report_id}", response_model=ReportResponse)
+async def get_report(report_id: UUID, db: AsyncSession = Depends(get_db)):
+    report = await db.get(Report, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+@router.delete("/report/{report_id}", status_code=204)
+async def delete_report(report_id: UUID, db: AsyncSession = Depends(get_db)):
+    report = await get_report(report_id, db)
+    await db.delete(report)
+    await db.commit()

@@ -1,5 +1,7 @@
 """Abstract Connector interface."""
+
 from abc import ABC, abstractmethod
+
 from app.models.ticket import Ticket
 
 

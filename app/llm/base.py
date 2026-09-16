@@ -1,4 +1,5 @@
 """Abstract LLMProvider interface."""
+
 from abc import ABC, abstractmethod
 
 

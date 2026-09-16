@@ -3,8 +3,10 @@
 CI runs `alembic upgrade head` before this test module, so these assert the
 schema that produced rather than re-running the migration themselves.
 """
+
 import pytest
 from sqlalchemy import text
+
 from app.db.session import engine
 
 pytestmark = pytest.mark.integration
@@ -29,5 +31,13 @@ async def test_reports_table_has_expected_columns():
         )
         columns = {row[0] for row in result.fetchall()}
 
-    assert {"id", "connector", "status", "model_used", "tokens_used",
-            "narrative", "output_format", "created_at"} <= columns
+    assert {
+        "id",
+        "connector",
+        "status",
+        "model_used",
+        "tokens_used",
+        "narrative",
+        "output_format",
+        "created_at",
+    } <= columns

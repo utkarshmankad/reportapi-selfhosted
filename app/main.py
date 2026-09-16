@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import health, report, schedule, template, config as config_routes
+
+from app.api.routes import config as config_routes
+from app.api.routes import health, report, schedule, template
 from app.config import settings
+from app.core.config_auth import require_config_token
 
 app = FastAPI(
     title="ReportAPI Self-Hosted",
@@ -17,13 +20,15 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(report.router)
-app.include_router(schedule.router)
-app.include_router(template.router)
+app.include_router(report.router, dependencies=[Depends(require_config_token)])
+app.include_router(schedule.router, dependencies=[Depends(require_config_token)])
+app.include_router(template.router, dependencies=[Depends(require_config_token)])
 app.include_router(config_routes.router)
 
 
 @app.on_event("startup")
 async def startup_event():
-    print(f"ReportAPI Self-Hosted starting — env={settings.app_env}, "
-          f"llm_provider={settings.llm_provider}")
+    print(
+        f"ReportAPI Self-Hosted starting — env={settings.app_env}, "
+        f"llm_provider={settings.llm_provider}"
+    )

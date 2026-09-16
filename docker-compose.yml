@@ -2,9 +2,13 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
+    environment:
+      CONFIG_STORE_PATH: /config/runtime.env
+    volumes:
+      - runtime_config:/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -17,6 +21,10 @@ services:
     command: celery -A app.worker.celery_app worker --loglevel=info
     env_file:
       - .env
+    environment:
+      CONFIG_STORE_PATH: /config/runtime.env
+    volumes:
+      - runtime_config:/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,6 +37,10 @@ services:
     command: celery -A app.worker.celery_app beat --loglevel=info
     env_file:
       - .env
+    environment:
+      CONFIG_STORE_PATH: /config/runtime.env
+    volumes:
+      - runtime_config:/config
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,9 +53,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      # Runs client-side in the browser on the host, so it must point at
-      # the host-published api port, not the container network name.
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - API_INTERNAL_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped
@@ -67,12 +77,6 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
-  chroma:
-    image: chromadb/chroma:latest
-    volumes:
-      - chroma_data:/chroma/chroma
-    restart: unless-stopped
-
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]
@@ -84,4 +88,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
-  chroma_data:
+  runtime_config:

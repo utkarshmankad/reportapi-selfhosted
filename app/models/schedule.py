@@ -1,19 +1,36 @@
-"""Schedule pydantic schema."""
-from typing import Literal
-from uuid import UUID
+"""Schedule request and response contracts."""
+
 from datetime import datetime
-from pydantic import BaseModel
+from uuid import UUID
+
+from croniter import croniter
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.models.report import GenerateReportRequest
 
 
-class CreateScheduleRequest(BaseModel):
+class CreateScheduleRequest(GenerateReportRequest):
     connector: str = "jira"
-    board_id: str | None = None
-    sprint_id: str | None = None
-    cron_expression: str
-    output_format: Literal["text", "markdown", "pdf"] = "text"
+    cron_expression: str = Field(max_length=100)
+    active: bool = True
+
+    @field_validator("connector")
+    @classmethod
+    def known_connector(cls, value):
+        if value not in {"jira", "asana", "github"}:
+            raise ValueError("Unsupported connector")
+        return value
+
+    @field_validator("cron_expression")
+    @classmethod
+    def valid_cron(cls, value):
+        if len(value.split()) != 5 or not croniter.is_valid(value):
+            raise ValueError("Enter a valid five-field cron expression (UTC)")
+        return value
 
 
 class ScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
     connector: str
     board_id: str | None
@@ -23,6 +40,3 @@ class ScheduleResponse(BaseModel):
     active: bool
     last_run_at: datetime | None
     created_at: datetime
-
-    class Config:
-        from_attributes = True

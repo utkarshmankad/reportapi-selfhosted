@@ -5,10 +5,12 @@ optionally grouped into a milestone. `board_id` maps to `owner/repo`,
 `sprint_id` (when given) maps to a milestone number and narrows the fetch
 to that milestone.
 """
+
 import httpx
+
+from app.config import settings
 from app.connectors.base import Connector
 from app.models.ticket import Ticket
-from app.config import settings
 
 API_BASE = "https://api.github.com"
 
@@ -70,19 +72,21 @@ class GitHubConnector(Connector):
             ]
             labels = [label for label in labels if label]
 
-            tickets.append(Ticket(
-                id=str(issue["number"]),
-                title=issue.get("title", ""),
-                description=issue.get("body") or "",
-                status=self._resolve_status(issue, labels),
-                assignee=(issue.get("assignee") or {}).get("login"),
-                priority=self._extract_priority(labels),
-                labels=labels,
-                created_at=issue["created_at"],
-                updated_at=issue["updated_at"],
-                sprint=(issue.get("milestone") or {}).get("title"),
-                url=issue.get("html_url", ""),
-            ))
+            tickets.append(
+                Ticket(
+                    id=str(issue["number"]),
+                    title=issue.get("title", ""),
+                    description=issue.get("body") or "",
+                    status=self._resolve_status(issue, labels),
+                    assignee=(issue.get("assignee") or {}).get("login"),
+                    priority=self._extract_priority(labels),
+                    labels=labels,
+                    created_at=issue["created_at"],
+                    updated_at=issue["updated_at"],
+                    sprint=(issue.get("milestone") or {}).get("title"),
+                    url=issue.get("html_url", ""),
+                )
+            )
 
         return tickets
 

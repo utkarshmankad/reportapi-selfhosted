@@ -1,19 +1,29 @@
 """Config routes — backs the localhost-only config UI (Jira, LLM, test connection)."""
+
 import httpx
 from fastapi import APIRouter, Depends
-from app.models.config import (
-    JiraConfigRequest, AsanaConfigRequest, GitHubConfigRequest, LLMConfigRequest, TestResult, ConfigStatus,
-)
-from app.core.env_writer import upsert_env_values, InvalidEnvValueError
-from app.core.ssrf_guard import assert_safe_url, UnsafeURLError
-from app.core.config_auth import require_config_token
-from app.config import settings
 
-router = APIRouter(prefix="/api/config", tags=["config"], dependencies=[Depends(require_config_token)])
+from app.config import reload_runtime_settings, settings
+from app.core.config_auth import require_config_token
+from app.core.env_writer import InvalidEnvValueError, upsert_env_values
+from app.core.ssrf_guard import UnsafeURLError, assert_safe_url
+from app.models.config import (
+    AsanaConfigRequest,
+    ConfigStatus,
+    GitHubConfigRequest,
+    JiraConfigRequest,
+    LLMConfigRequest,
+    TestResult,
+)
+
+router = APIRouter(
+    prefix="/api/config", tags=["config"], dependencies=[Depends(require_config_token)]
+)
 
 
 @router.get("", response_model=ConfigStatus)
 async def get_config_status():
+    reload_runtime_settings()
     return ConfigStatus(
         app_env=settings.app_env,
         llm_provider=settings.llm_provider,
@@ -53,14 +63,17 @@ async def test_jira_connection(request: JiraConfigRequest):
 @router.post("/jira", response_model=TestResult)
 async def save_jira_config(request: JiraConfigRequest):
     try:
-        upsert_env_values({
-            "JIRA_URL": request.jira_url,
-            "JIRA_EMAIL": request.jira_email,
-            "JIRA_API_TOKEN": request.jira_api_token,
-        })
+        upsert_env_values(
+            {
+                "JIRA_URL": request.jira_url,
+                "JIRA_EMAIL": request.jira_email,
+                "JIRA_API_TOKEN": request.jira_api_token,
+            }
+        )
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
-    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+    reload_runtime_settings()
+    return TestResult(ok=True, detail="Saved. New reports will use these settings.")
 
 
 @router.post("/asana/test", response_model=TestResult)
@@ -86,7 +99,8 @@ async def save_asana_config(request: AsanaConfigRequest):
         upsert_env_values({"ASANA_PAT": request.asana_pat})
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
-    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+    reload_runtime_settings()
+    return TestResult(ok=True, detail="Saved. New reports will use these settings.")
 
 
 @router.post("/github/test", response_model=TestResult)
@@ -115,7 +129,8 @@ async def save_github_config(request: GitHubConfigRequest):
         upsert_env_values({"GITHUB_PAT": request.github_pat})
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
-    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+    reload_runtime_settings()
+    return TestResult(ok=True, detail="Saved. New reports will use these settings.")
 
 
 @router.post("/llm/test", response_model=TestResult)
@@ -126,27 +141,36 @@ async def test_llm_connection(request: LLMConfigRequest):
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {request.api_key}"},
-                    json={"model": "gpt-4o-mini", "max_tokens": 5,
-                          "messages": [{"role": "user", "content": "ping"}]},
+                    json={
+                        "model": "gpt-4o-mini",
+                        "max_tokens": 5,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
                 )
         elif request.llm_provider == "anthropic":
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
                     headers={"x-api-key": request.api_key, "anthropic-version": "2023-06-01"},
-                    json={"model": "claude-sonnet-4-5", "max_tokens": 5,
-                          "messages": [{"role": "user", "content": "ping"}]},
+                    json={
+                        "model": "claude-sonnet-4-5",
+                        "max_tokens": 5,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
                 )
         elif request.llm_provider == "groq":
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
                 response = await client.post(
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {request.api_key}"},
-                    json={"model": "llama-3.3-70b-versatile", "max_tokens": 5,
-                          "messages": [{"role": "user", "content": "ping"}]},
+                    json={
+                        "model": "llama-3.3-70b-versatile",
+                        "max_tokens": 5,
+                        "messages": [{"role": "user", "content": "ping"}],
+                    },
                 )
         else:  # ollama — intentionally reachable on the private docker
-               # network, but still blocked from loopback/link-local/metadata.
+            # network, but still blocked from loopback/link-local/metadata.
             base_url = (request.ollama_base_url or settings.ollama_base_url).rstrip("/")
             try:
                 assert_safe_url(base_url, allow_private=True)
@@ -158,7 +182,9 @@ async def test_llm_connection(request: LLMConfigRequest):
 
         if response.status_code == 200:
             return TestResult(ok=True, detail=f"Connected to {request.llm_provider} successfully.")
-        return TestResult(ok=False, detail=f"{request.llm_provider} responded with status {response.status_code}.")
+        return TestResult(
+            ok=False, detail=f"{request.llm_provider} responded with status {response.status_code}."
+        )
     except Exception as e:
         return TestResult(ok=False, detail=f"Could not reach {request.llm_provider}: {str(e)}")
 
@@ -179,4 +205,5 @@ async def save_llm_config(request: LLMConfigRequest):
         upsert_env_values(values)
     except InvalidEnvValueError as e:
         return TestResult(ok=False, detail=str(e))
-    return TestResult(ok=True, detail="Saved. Restart the api/worker containers to apply.")
+    reload_runtime_settings()
+    return TestResult(ok=True, detail="Saved. New reports will use these settings.")

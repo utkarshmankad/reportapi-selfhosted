@@ -1,14 +1,16 @@
 """Core report generation logic — shared by the API route and the Celery beat scheduler."""
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.connectors.jira import JiraConnector
+
+from app.config import reload_runtime_settings, settings
 from app.connectors.asana import AsanaConnector
 from app.connectors.github import GitHubConnector
+from app.connectors.jira import JiraConnector
 from app.core.pii import strip_pii_from_ticket
-from app.models.ticket import Ticket
 from app.core.prompt_builder import build_prompt
-from app.llm.factory import get_llm_provider
 from app.db.models import Report
-from app.config import settings
+from app.llm.factory import get_llm_provider
+from app.models.ticket import Ticket
 
 
 class ReportGenerationError(Exception):
@@ -45,6 +47,7 @@ async def generate_report(
     Fetch tickets, strip PII, generate a narrative, persist the report.
     Returns (report, ticket_count). Raises ReportGenerationError on any failure.
     """
+    reload_runtime_settings()
     connectors = {"jira": JiraConnector, "asana": AsanaConnector, "github": GitHubConnector}
     if connector not in connectors:
         raise ReportGenerationError(

@@ -1,19 +1,20 @@
 """Report template pydantic schema."""
-from uuid import UUID
+
 from datetime import datetime
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateTemplateRequest(BaseModel):
-    name: str
-    content: str
+    name: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=50000)
 
 
 class TemplateResponse(BaseModel):
     id: UUID
-    name: str
-    content: str
+    name: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=50000)
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

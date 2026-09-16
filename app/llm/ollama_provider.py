@@ -1,7 +1,9 @@
 """Ollama LLM provider — runs fully local, no internet traffic."""
+
 import httpx
-from app.llm.base import LLMProvider
+
 from app.config import settings
+from app.llm.base import LLMProvider
 
 
 class OllamaProvider(LLMProvider):

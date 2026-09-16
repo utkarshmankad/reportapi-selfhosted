@@ -1,10 +1,16 @@
-import pytest
-from datetime import datetime, timezone
 import uuid
-from app.core.template_renderer import (
-    validate_template, render_template, render_markdown, TemplateRenderError, DEFAULT_TEMPLATE,
-)
+from datetime import datetime, timezone
+
+import pytest
+
 from app.core.pdf_renderer import render_pdf
+from app.core.template_renderer import (
+    DEFAULT_TEMPLATE,
+    TemplateRenderError,
+    render_markdown,
+    render_template,
+    validate_template,
+)
 from app.db.models import Report
 
 

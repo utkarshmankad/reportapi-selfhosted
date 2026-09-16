@@ -1,15 +1,24 @@
 from datetime import datetime, timedelta, timezone
-from app.models.ticket import Ticket
+
 from app.core.report_service import dedupe_tickets
+from app.models.ticket import Ticket
 
 NOW = datetime.now(timezone.utc)
 
 
 def _ticket(**overrides):
     defaults = dict(
-        id="1", title="Some task", description="", status="in_progress",
-        assignee="alice", priority=None, labels=[], created_at=NOW,
-        updated_at=NOW, sprint=None, url="https://example.com",
+        id="1",
+        title="Some task",
+        description="",
+        status="in_progress",
+        assignee="alice",
+        priority=None,
+        labels=[],
+        created_at=NOW,
+        updated_at=NOW,
+        sprint=None,
+        url="https://example.com",
     )
     defaults.update(overrides)
     return Ticket(**defaults)
@@ -26,7 +35,12 @@ def test_duplicate_id_collapses_to_one_ticket():
 
 
 def test_duplicate_id_keeps_most_recently_updated_record():
-    stale = _ticket(id="26484", title="Fix view creation", status="in_progress", updated_at=NOW - timedelta(days=5))
+    stale = _ticket(
+        id="26484",
+        title="Fix view creation",
+        status="in_progress",
+        updated_at=NOW - timedelta(days=5),
+    )
     fresh = _ticket(id="26484", title="Fix view creation", status="blocked", updated_at=NOW)
     result = dedupe_tickets([stale, fresh])
     assert len(result) == 1
