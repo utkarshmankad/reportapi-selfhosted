@@ -1,7 +1,9 @@
 """Prompt construction for LLM providers."""
+
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
+
 from app.models.ticket import Ticket
 
 STALE_DAYS_THRESHOLD = 3
@@ -60,7 +62,9 @@ paragraph — e.g. "N of M tickets (X%) have no assignee." A large unowned \
 share is itself a risk to call out, not a footnote.
 - No closing summary paragraph. End after the risk section.
 - Maximum length: {{max_tokens}} tokens.
-""".format(stale_days=STALE_DAYS_THRESHOLD, max_tokens="{max_tokens}")
+""".format(
+    stale_days=STALE_DAYS_THRESHOLD,
+)
 
 
 def _days_since(dt: datetime) -> int:
@@ -80,7 +84,10 @@ def _is_high_priority(priority: str | None) -> bool:
 def _is_security(t: Ticket) -> bool:
     if any("security" in label.lower() for label in t.labels):
         return True
-    return bool(_SECURITY_ADVISORY_PATTERN.search(t.title) or _SECURITY_ADVISORY_PATTERN.search(t.description or ""))
+    return bool(
+        _SECURITY_ADVISORY_PATTERN.search(t.title)
+        or _SECURITY_ADVISORY_PATTERN.search(t.description or "")
+    )
 
 
 def _risk_tier_and_reason(t: Ticket, is_stale: bool, stale_days: int) -> tuple[str, str] | None:
@@ -94,7 +101,9 @@ def _risk_tier_and_reason(t: Ticket, is_stale: bool, stale_days: int) -> tuple[s
         return "HIGH", "blocked, no priority set"
 
     if is_stale and (high_pri or security):
-        reason = f"stale {stale_days}d" + (", security advisory" if security else f", priority {t.priority}")
+        reason = f"stale {stale_days}d" + (
+            ", security advisory" if security else f", priority {t.priority}"
+        )
         return "HIGH", reason
 
     if is_stale:
@@ -155,7 +164,9 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
 
     unassigned_count = len(tickets) - sum(len(v) for v in assignee_map.values())
     unassigned_pct = round(100 * unassigned_count / len(tickets)) if tickets else 0
-    lines.append(f"Unassigned: {unassigned_count} of {len(tickets)} tickets ({unassigned_pct}%) have no assignee.")
+    lines.append(
+        f"Unassigned: {unassigned_count} of {len(tickets)} tickets ({unassigned_pct}%) have no assignee."
+    )
 
     lines.append("")
     lines.append("By assignee:")
@@ -191,7 +202,9 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
         by_id = {t.id: t for t in tickets}
         for tid, (tier, reason) in sorted(risk_by_id.items(), key=lambda kv: tier_order[kv[1][0]]):
             t = by_id[tid]
-            lines.append(f"- [{tier}] {t.title} (assignee: {t.assignee or 'unassigned'}) — {reason}")
+            lines.append(
+                f"- [{tier}] {t.title} (assignee: {t.assignee or 'unassigned'}) — {reason}"
+            )
     else:
         lines.append("- None.")
 

@@ -1,6 +1,7 @@
+import httpx
 import pytest
 import respx
-import httpx
+
 from app.connectors.github import GitHubConnector
 
 
@@ -61,18 +62,23 @@ async def test_closed_issue_maps_to_done(monkeypatch):
     monkeypatch.setattr("app.config.settings.github_pat", "fake-pat")
 
     respx.get("https://api.github.com/repos/acme/widgets/issues").mock(
-        return_value=httpx.Response(200, json=[{
-            "number": 44,
-            "title": "Ship release notes",
-            "body": None,
-            "state": "closed",
-            "assignee": None,
-            "labels": [],
-            "created_at": "2026-05-01T10:00:00Z",
-            "updated_at": "2026-05-02T10:00:00Z",
-            "milestone": None,
-            "html_url": "https://github.com/acme/widgets/issues/44",
-        }])
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 44,
+                    "title": "Ship release notes",
+                    "body": None,
+                    "state": "closed",
+                    "assignee": None,
+                    "labels": [],
+                    "created_at": "2026-05-01T10:00:00Z",
+                    "updated_at": "2026-05-02T10:00:00Z",
+                    "milestone": None,
+                    "html_url": "https://github.com/acme/widgets/issues/44",
+                }
+            ],
+        )
     )
 
     connector = GitHubConnector()
@@ -89,18 +95,23 @@ async def test_status_label_hint_overrides_open_state(monkeypatch):
     monkeypatch.setattr("app.config.settings.github_pat", "fake-pat")
 
     respx.get("https://api.github.com/repos/acme/widgets/issues").mock(
-        return_value=httpx.Response(200, json=[{
-            "number": 45,
-            "title": "Investigate flaky test",
-            "body": "",
-            "state": "open",
-            "assignee": None,
-            "labels": [{"name": "in progress"}],
-            "created_at": "2026-05-01T10:00:00Z",
-            "updated_at": "2026-05-02T10:00:00Z",
-            "milestone": None,
-            "html_url": "https://github.com/acme/widgets/issues/45",
-        }])
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 45,
+                    "title": "Investigate flaky test",
+                    "body": "",
+                    "state": "open",
+                    "assignee": None,
+                    "labels": [{"name": "in progress"}],
+                    "created_at": "2026-05-01T10:00:00Z",
+                    "updated_at": "2026-05-02T10:00:00Z",
+                    "milestone": None,
+                    "html_url": "https://github.com/acme/widgets/issues/45",
+                }
+            ],
+        )
     )
 
     connector = GitHubConnector()
@@ -115,18 +126,23 @@ async def test_unassigned_open_issue_maps_to_todo(monkeypatch):
     monkeypatch.setattr("app.config.settings.github_pat", "fake-pat")
 
     respx.get("https://api.github.com/repos/acme/widgets/issues").mock(
-        return_value=httpx.Response(200, json=[{
-            "number": 46,
-            "title": "Untouched backlog item",
-            "body": "",
-            "state": "open",
-            "assignee": None,
-            "labels": [],
-            "created_at": "2026-05-01T10:00:00Z",
-            "updated_at": "2026-05-02T10:00:00Z",
-            "milestone": None,
-            "html_url": "https://github.com/acme/widgets/issues/46",
-        }])
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "number": 46,
+                    "title": "Untouched backlog item",
+                    "body": "",
+                    "state": "open",
+                    "assignee": None,
+                    "labels": [],
+                    "created_at": "2026-05-01T10:00:00Z",
+                    "updated_at": "2026-05-02T10:00:00Z",
+                    "milestone": None,
+                    "html_url": "https://github.com/acme/widgets/issues/46",
+                }
+            ],
+        )
     )
 
     connector = GitHubConnector()

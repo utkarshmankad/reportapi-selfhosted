@@ -1,5 +1,7 @@
 """Config pydantic schemas — used by the config UI."""
+
 from typing import Literal
+
 from pydantic import BaseModel
 
 

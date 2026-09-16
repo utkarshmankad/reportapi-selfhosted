@@ -4,72 +4,82 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  POETRY_NO_INTERACTION: 1
+  POETRY_NO_INTERACTION: '1'
+  DATABASE_URL: postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi
+  REDIS_URL: redis://localhost:6379/0
 
 jobs:
+  quality:
+    name: Code quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python
+      - run: poetry check --lock
+      - run: poetry run ruff check app tests scripts alembic
+      - run: poetry run ruff format --check app tests scripts alembic
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: config-ui/package-lock.json
+      - run: npm ci
+        working-directory: config-ui
+      - run: npm run typecheck && npm run lint && npm run format:check && npm run build
+        working-directory: config-ui
+
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python
+      - run: poetry run pytest tests --ignore=tests/integration -m 'not integration and not e2e' --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          python-version: "3.12"
+          name: python-coverage
+          path: coverage.xml
+          if-no-files-found: error
 
-      - name: Install Poetry
-        run: pipx install poetry==2.4.1
-
-      - name: Install dependencies
-        run: poetry install --no-root
-
-      - name: Run unit tests
-        env:
-          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
-          REDIS_URL: "redis://localhost:6379/0"
-        run: poetry run pytest tests/ -v -m "not integration and not e2e" --ignore=tests/integration
-
-  security:
-    name: Security scan
+  frontend-tests:
+    name: Frontend tests and 80% coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: pipx install poetry==2.4.1
-
-      - name: Install dependencies
-        run: poetry install --no-root
-
-      - name: Bandit (static analysis)
-        run: poetry run bandit -r app -ll
-
-      - name: pip-audit (dependency vulnerabilities)
-        run: pipx run pip-audit --progress-spinner=off || true
-        # Non-blocking for now: some transitive deps (chromadb, weasyprint)
-        # pull in packages with advisories that don't apply to how they're
-        # used here. Flip this to a hard failure once the noise is triaged.
-
-      - name: SSRF / credential-handling regression tests
-        env:
-          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
-          REDIS_URL: "redis://localhost:6379/0"
-        run: poetry run pytest tests/test_ssrf_guard.py tests/test_env_writer.py tests/test_pii.py -v
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: config-ui/package-lock.json
+      - run: npm ci && npm run test:coverage
+        working-directory: config-ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-coverage
+          path: config-ui/coverage
+          if-no-files-found: error
 
   integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
@@ -77,78 +87,104 @@ jobs:
           POSTGRES_USER: reportapi
           POSTGRES_PASSWORD: reportapi
           POSTGRES_DB: reportapi
-        ports: ["5432:5432"]
+        ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U reportapi"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd="pg_isready -U reportapi"
+          --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
-        ports: ["6379:6379"]
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python
+      - run: poetry run alembic upgrade head
+      - run: poetry run alembic check
+      - run: poetry run pytest tests/integration -v -m integration
 
-      - uses: actions/setup-python@v5
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python
+      - run: poetry run bandit -r app -ll
+      # Runs inside the installed project environment, and fails on findings.
+      - run: poetry run pip-audit --progress-spinner=off
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: config-ui/package-lock.json
+      - run: npm ci && npm audit --audit-level=moderate
+        working-directory: config-ui
 
-      - name: Install Poetry
-        run: pipx install poetry==2.4.1
-
-      - name: Install dependencies
-        run: poetry install --no-root
-
-      - name: Run migrations
-        env:
-          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
-          REDIS_URL: "redis://localhost:6379/0"
-        run: poetry run alembic upgrade head
-
-      - name: Run integration tests
-        env:
-          DATABASE_URL: "postgresql+asyncpg://reportapi:reportapi@localhost:5432/reportapi"
-          REDIS_URL: "redis://localhost:6379/0"
-        run: poetry run pytest tests/integration/ -v -m integration
-
-  e2e-tests:
+  smoke:
     name: End-to-end (docker compose)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: config-ui/package-lock.json
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: config-ui
+      - run: ./scripts/e2e-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure
+          path: config-ui/test-results
 
-      - name: Run e2e smoke test
-        run: ./scripts/e2e-smoke.sh
+  ci:
+    name: CI required
+    if: always()
+    needs: [quality, unit-tests, frontend-tests, integration-tests, security, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every gate to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          failed = [name for name, job in results.items() if job['result'] != 'success']
+          if failed:
+              raise SystemExit('Required gates did not pass: ' + ', '.join(failed))
+          PY
 
   publish:
     name: Publish images to GHCR
-    needs: [unit-tests, security, integration-tests, e2e-tests]
+    needs: [ci]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push engine image
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/reportapi-engine:latest
             ghcr.io/${{ github.repository_owner }}/reportapi-engine:${{ github.sha }}
-
-      - name: Build and push config-ui image
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: ./config-ui
           push: true

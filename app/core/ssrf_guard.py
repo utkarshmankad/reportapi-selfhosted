@@ -1,8 +1,9 @@
 """Guards against SSRF when the config UI's "test connection" endpoints
 make outbound requests to a user-supplied URL (Jira URL, Ollama base URL).
 """
-import socket
+
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 

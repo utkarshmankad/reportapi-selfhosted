@@ -1,9 +1,9 @@
-FROM node:20-slim AS base
+FROM node:22-slim AS base
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 RUN npm run build

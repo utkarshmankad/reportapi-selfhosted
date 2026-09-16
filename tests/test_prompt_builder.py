@@ -1,15 +1,24 @@
 from datetime import datetime, timedelta, timezone
-from app.models.ticket import Ticket
+
 from app.core.prompt_builder import build_prompt
+from app.models.ticket import Ticket
 
 NOW = datetime.now(timezone.utc)
 
 
 def _ticket(**overrides):
     defaults = dict(
-        id="1", title="Some task", description="", status="in_progress",
-        assignee="alice", priority=None, labels=[], created_at=NOW,
-        updated_at=NOW, sprint=None, url="https://example.com",
+        id="1",
+        title="Some task",
+        description="",
+        status="in_progress",
+        assignee="alice",
+        priority=None,
+        labels=[],
+        created_at=NOW,
+        updated_at=NOW,
+        sprint=None,
+        url="https://example.com",
     )
     defaults.update(overrides)
     return Ticket(**defaults)
@@ -48,8 +57,8 @@ def test_stale_ticket_is_flagged():
     fresh = _ticket(id="2", status="in_progress", updated_at=NOW)
     _, user_content = build_prompt([stale, fresh], 800)
     lines = user_content.splitlines()
-    stale_line = next(l for l in lines if "id" not in l and "last updated 5d ago" in l)
-    fresh_line = next(l for l in lines if "last updated 0d ago" in l)
+    stale_line = next(line for line in lines if "id" not in line and "last updated 5d ago" in line)
+    fresh_line = next(line for line in lines if "last updated 0d ago" in line)
     assert "STALE" in stale_line
     assert "STALE" not in fresh_line
 
@@ -94,13 +103,23 @@ def test_blocked_ticket_is_high_risk_when_no_priority():
 
 
 def test_stale_high_priority_ticket_is_high_risk():
-    t = _ticket(status="in_progress", priority="critical", updated_at=NOW - timedelta(days=10), title="Stale critical")
+    t = _ticket(
+        status="in_progress",
+        priority="critical",
+        updated_at=NOW - timedelta(days=10),
+        title="Stale critical",
+    )
     _, user_content = build_prompt([t], 800)
     assert "[HIGH] Stale critical" in user_content
 
 
 def test_stale_low_priority_ticket_is_medium_risk():
-    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=10), title="Stale routine")
+    t = _ticket(
+        status="in_progress",
+        priority=None,
+        updated_at=NOW - timedelta(days=10),
+        title="Stale routine",
+    )
     _, user_content = build_prompt([t], 800)
     assert "[MEDIUM] Stale routine" in user_content
 
@@ -113,15 +132,22 @@ def test_fresh_low_priority_ticket_is_not_a_risk():
 
 
 def test_security_advisory_reference_flagged_as_risk_even_without_priority():
-    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=5),
-                title="RUSTSEC-2026-0235 openssl vuln")
+    t = _ticket(
+        status="in_progress",
+        priority=None,
+        updated_at=NOW - timedelta(days=5),
+        title="RUSTSEC-2026-0235 openssl vuln",
+    )
     _, user_content = build_prompt([t], 800)
     assert "[HIGH] RUSTSEC-2026-0235 openssl vuln" in user_content
 
 
 def test_tracking_ticket_and_advisory_ticket_collapse_into_one_related_entry():
-    tracking = _ticket(id="1", title="Tracking: outstanding RustSec advisories",
-                       description="parent tracker for RUSTSEC-2026-0235")
+    tracking = _ticket(
+        id="1",
+        title="Tracking: outstanding RustSec advisories",
+        description="parent tracker for RUSTSEC-2026-0235",
+    )
     advisory = _ticket(id="2", title="RUSTSEC-2026-0235 openssl vuln")
     _, user_content = build_prompt([tracking, advisory], 800)
     assert "RELATED (same underlying issue" in user_content
@@ -133,7 +159,9 @@ def test_tracking_ticket_and_advisory_ticket_collapse_into_one_related_entry():
 
 
 def test_single_ticket_referencing_advisory_id_has_no_related_section():
-    t = _ticket(title="RUSTSEC-2026-0235 openssl vuln", description="see RUSTSEC-2026-0235 for details")
+    t = _ticket(
+        title="RUSTSEC-2026-0235 openssl vuln", description="see RUSTSEC-2026-0235 for details"
+    )
     _, user_content = build_prompt([t], 800)
     assert "RELATED" not in user_content
 
@@ -161,10 +189,14 @@ def test_tied_top_assignees_do_not_get_a_misleading_load_note():
 
 
 def test_risk_reason_is_stated_not_just_the_tier():
-    t = _ticket(status="in_progress", priority="high", updated_at=NOW - timedelta(days=10),
-               title="Stale critical")
+    t = _ticket(
+        status="in_progress",
+        priority="high",
+        updated_at=NOW - timedelta(days=10),
+        title="Stale critical",
+    )
     _, user_content = build_prompt([t], 800)
-    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [HIGH]"))
+    risk_line = next(line for line in user_content.splitlines() if line.startswith("- [HIGH]"))
     assert "stale 10d" in risk_line
     assert "priority high" in risk_line
 
@@ -172,7 +204,7 @@ def test_risk_reason_is_stated_not_just_the_tier():
 def test_blocked_high_risk_reason_names_missing_priority():
     t = _ticket(status="blocked", priority=None, title="Just blocked")
     _, user_content = build_prompt([t], 800)
-    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [HIGH]"))
+    risk_line = next(line for line in user_content.splitlines() if line.startswith("- [HIGH]"))
     assert "no priority set" in risk_line
 
 
@@ -197,22 +229,40 @@ def test_bare_issue_reference_is_not_mislabeled_as_security_advisory():
     # #123", "fixes #456") is not a security advisory. The xref pattern
     # used for RELATED-ticket grouping must not double as the security
     # detector, or ordinary feature/bugfix tickets get tagged as advisories.
-    t = _ticket(status="in_progress", priority=None, updated_at=NOW - timedelta(days=5),
-               title="Add CancelRequest support", description="fixes #999, related to #888")
+    t = _ticket(
+        status="in_progress",
+        priority=None,
+        updated_at=NOW - timedelta(days=5),
+        title="Add CancelRequest support",
+        description="fixes #999, related to #888",
+    )
     _, user_content = build_prompt([t], 800)
-    risk_line = next(l for l in user_content.splitlines() if l.startswith("- [MEDIUM]"))
+    risk_line = next(line for line in user_content.splitlines() if line.startswith("- [MEDIUM]"))
     assert "security advisory" not in risk_line.lower()
     assert "no priority/security signal" in risk_line
 
 
 def test_only_real_advisory_ids_are_flagged_security_among_mixed_tickets():
-    unrelated = _ticket(id="1", status="in_progress", priority=None, title="Mask serving workers",
-                        description="see also #123", updated_at=NOW - timedelta(days=10))
-    real_advisory = _ticket(id="2", status="in_progress", priority="high", title="RUSTSEC-2026-0235 openssl vuln",
-                            updated_at=NOW - timedelta(days=10))
+    unrelated = _ticket(
+        id="1",
+        status="in_progress",
+        priority=None,
+        title="Mask serving workers",
+        description="see also #123",
+        updated_at=NOW - timedelta(days=10),
+    )
+    real_advisory = _ticket(
+        id="2",
+        status="in_progress",
+        priority="high",
+        title="RUSTSEC-2026-0235 openssl vuln",
+        updated_at=NOW - timedelta(days=10),
+    )
     _, user_content = build_prompt([unrelated, real_advisory], 800)
     risk_block = user_content.split("Risk tickets")[1]
-    unrelated_line = next(l for l in risk_block.splitlines() if "Mask serving workers" in l)
-    advisory_line = next(l for l in risk_block.splitlines() if "RUSTSEC-2026-0235" in l)
+    unrelated_line = next(
+        line for line in risk_block.splitlines() if "Mask serving workers" in line
+    )
+    advisory_line = next(line for line in risk_block.splitlines() if "RUSTSEC-2026-0235" in line)
     assert "security advisory" not in unrelated_line.lower()
     assert "security advisory" in advisory_line

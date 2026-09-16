@@ -1,4 +1,4 @@
-from app.core.pii import strip_pii, find_credit_cards, luhn_check
+from app.core.pii import luhn_check, strip_pii
 
 
 def test_strips_aadhaar():

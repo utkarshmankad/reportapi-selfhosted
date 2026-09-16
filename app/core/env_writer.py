@@ -1,14 +1,29 @@
-"""Persist config-UI form submissions to the .env file on disk."""
+"""Persist credential overrides to a shared runtime configuration file."""
+
+import fcntl
 import os
+import tempfile
 from pathlib import Path
 
-ENV_PATH = Path(".env")
+from dotenv import set_key
+
+from app.config import settings
+
+ENV_PATH = Path(settings.config_store_path)
 
 # Only these keys can be written by the config UI — prevents a caller from
 # injecting arbitrary env vars (e.g. overwriting DATABASE_URL or PYTHONPATH).
 ALLOWED_KEYS = {
-    "JIRA_URL", "JIRA_EMAIL", "JIRA_API_TOKEN",
-    "LLM_PROVIDER", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OLLAMA_BASE_URL", "GROQ_API_KEY",
+    "JIRA_URL",
+    "JIRA_EMAIL",
+    "JIRA_API_TOKEN",
+    "ASANA_PAT",
+    "GITHUB_PAT",
+    "LLM_PROVIDER",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OLLAMA_BASE_URL",
+    "GROQ_API_KEY",
 }
 
 
@@ -18,8 +33,7 @@ class InvalidEnvValueError(Exception):
 
 def upsert_env_values(values: dict[str, str]) -> None:
     """
-    Update or append KEY=VALUE lines in .env. Takes effect after the next
-    process restart (Settings is loaded once at import time).
+    Atomically update quoted KEY=VALUE overrides shared by the API and workers.
     """
     for key, value in values.items():
         if key not in ALLOWED_KEYS:
@@ -27,25 +41,19 @@ def upsert_env_values(values: dict[str, str]) -> None:
         if any(c in value for c in ("\n", "\r")):
             raise InvalidEnvValueError(f"Value for '{key}' contains a line break")
 
-    lines = ENV_PATH.read_text().splitlines() if ENV_PATH.exists() else []
-    keys_remaining = dict(values)
-
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key = stripped.split("=", 1)[0].strip()
-        if key in keys_remaining:
-            lines[i] = f"{key}={keys_remaining.pop(key)}"
-
-    for key, value in keys_remaining.items():
-        lines.append(f"{key}={value}")
-
-    content = "\n".join(lines) + "\n"
-
-    # Write owner-only (0600) — this file holds API tokens/keys.
-    fd = os.open(str(ENV_PATH), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.write(fd, content.encode("utf-8"))
-    finally:
-        os.close(fd)
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = ENV_PATH.with_suffix(".lock")
+    with lock_path.open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        fd, temporary = tempfile.mkstemp(dir=ENV_PATH.parent, prefix=".config-")
+        try:
+            with os.fdopen(fd, "w") as output:
+                if ENV_PATH.exists():
+                    output.write(ENV_PATH.read_text())
+            for key, value in values.items():
+                set_key(temporary, key, value, quote_mode="always")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, ENV_PATH)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)

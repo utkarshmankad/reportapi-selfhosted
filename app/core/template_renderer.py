@@ -5,9 +5,12 @@ Templates are user-uploaded, so rendering uses jinja2's SandboxedEnvironment
 templates are rendered only from a string via `from_string`, so there is no
 filesystem or OS access available to template authors.
 """
+
 from datetime import datetime, timezone
-from jinja2.sandbox import SandboxedEnvironment
+
 from jinja2.exceptions import TemplateError
+from jinja2.sandbox import SandboxedEnvironment
+
 from app.db.models import Report
 
 _env = SandboxedEnvironment(autoescape=True)

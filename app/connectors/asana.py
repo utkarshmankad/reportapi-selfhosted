@@ -5,10 +5,12 @@ grouped into sections. The connector reuses the Jira-shaped `board_id` /
 `sprint_id` filter contract: `board_id` maps to a project GID, `sprint_id`
 (when given) maps to a section GID within that project.
 """
+
 import httpx
+
+from app.config import settings
 from app.connectors.base import Connector
 from app.models.ticket import Ticket
-from app.config import settings
 
 API_BASE = "https://app.asana.com/api/1.0"
 
@@ -31,9 +33,7 @@ SECTION_STATUS_HINTS = {
 class AsanaConnector(Connector):
     def __init__(self):
         if not settings.asana_pat:
-            raise ValueError(
-                "Asana credentials not configured. Set ASANA_PAT in your environment."
-            )
+            raise ValueError("Asana credentials not configured. Set ASANA_PAT in your environment.")
         self.headers = {"Authorization": f"Bearer {settings.asana_pat}"}
 
     async def authenticate(self) -> bool:
@@ -66,19 +66,21 @@ class AsanaConnector(Connector):
 
         tickets: list[Ticket] = []
         for task in data.get("data", []):
-            tickets.append(Ticket(
-                id=task["gid"],
-                title=task.get("name", ""),
-                description=task.get("notes", "") or "",
-                status=self._resolve_status(task),
-                assignee=(task.get("assignee") or {}).get("name"),
-                priority=self._extract_priority(task),
-                labels=[tag.get("name") for tag in task.get("tags", []) if tag.get("name")],
-                created_at=task["created_at"],
-                updated_at=task["modified_at"],
-                sprint=self._extract_section_name(task),
-                url=task.get("permalink_url", ""),
-            ))
+            tickets.append(
+                Ticket(
+                    id=task["gid"],
+                    title=task.get("name", ""),
+                    description=task.get("notes", "") or "",
+                    status=self._resolve_status(task),
+                    assignee=(task.get("assignee") or {}).get("name"),
+                    priority=self._extract_priority(task),
+                    labels=[tag.get("name") for tag in task.get("tags", []) if tag.get("name")],
+                    created_at=task["created_at"],
+                    updated_at=task["modified_at"],
+                    sprint=self._extract_section_name(task),
+                    url=task.get("permalink_url", ""),
+                )
+            )
 
         return tickets
 

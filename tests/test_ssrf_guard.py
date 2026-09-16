@@ -1,5 +1,6 @@
 import pytest
-from app.core.ssrf_guard import assert_safe_url, UnsafeURLError
+
+from app.core.ssrf_guard import UnsafeURLError, assert_safe_url
 
 
 def test_rejects_loopback():
@@ -31,5 +32,10 @@ def test_rejects_bad_scheme():
         assert_safe_url("file:///etc/passwd", allow_private=True)
 
 
-def test_allows_public_host():
+def test_allows_public_host(monkeypatch):
+    import socket
+
+    monkeypatch.setattr(
+        socket, "getaddrinfo", lambda *args: [(2, 1, 6, "", ("93.184.216.34", 443))]
+    )
     assert_safe_url("https://example.com/rest/api/3/myself", allow_private=False)

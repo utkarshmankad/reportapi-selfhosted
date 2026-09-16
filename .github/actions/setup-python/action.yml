@@ -1,0 +1,14 @@
+name: Python dependencies
+description: Install the locked Python environment and PDF system libraries
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangocairo-1.0-0 fonts-liberation
+        pipx install poetry==2.4.1
+        poetry install --no-root

@@ -5,7 +5,9 @@ This module exists so a future paid tier (extra connectors, hosted scheduling,
 etc.) has a single, consistent place to gate on — nothing in the codebase
 calls `require_paid_tier` yet.
 """
+
 from fastapi import HTTPException
+
 from app.config import settings
 
 
@@ -27,5 +29,5 @@ async def require_paid_tier() -> None:
         raise HTTPException(
             status_code=402,
             detail="This feature requires a paid ReportAPI license. "
-                   "Set LICENSE_TIER=paid and LICENSE_KEY in your environment.",
+            "Set LICENSE_TIER=paid and LICENSE_KEY in your environment.",
         )

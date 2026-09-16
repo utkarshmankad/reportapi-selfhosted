@@ -1,4 +1,5 @@
 """PII detection and stripping."""
+
 import re
 
 AADHAAR_RE = re.compile(r"\b[2-9]\d{11}\b")

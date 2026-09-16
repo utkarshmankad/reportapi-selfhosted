@@ -1,6 +1,7 @@
+import httpx
 import pytest
 import respx
-import httpx
+
 from app.connectors.asana import AsanaConnector
 
 
@@ -52,19 +53,26 @@ async def test_fetch_falls_back_to_completed_flag(monkeypatch):
     monkeypatch.setattr("app.config.settings.asana_pat", "fake-pat")
 
     respx.get("https://app.asana.com/api/1.0/projects/1200/tasks").mock(
-        return_value=httpx.Response(200, json={"data": [{
-            "gid": "1202",
-            "name": "Ship release notes",
-            "notes": "",
-            "completed": True,
-            "assignee": None,
-            "tags": [],
-            "created_at": "2026-05-01T10:00:00.000Z",
-            "modified_at": "2026-05-02T10:00:00.000Z",
-            "memberships": [],
-            "permalink_url": "https://app.asana.com/0/1200/1202",
-            "custom_fields": [],
-        }]})
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "gid": "1202",
+                        "name": "Ship release notes",
+                        "notes": "",
+                        "completed": True,
+                        "assignee": None,
+                        "tags": [],
+                        "created_at": "2026-05-01T10:00:00.000Z",
+                        "modified_at": "2026-05-02T10:00:00.000Z",
+                        "memberships": [],
+                        "permalink_url": "https://app.asana.com/0/1200/1202",
+                        "custom_fields": [],
+                    }
+                ]
+            },
+        )
     )
 
     connector = AsanaConnector()

@@ -1,6 +1,8 @@
 """Application configuration via Pydantic Settings."""
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -38,7 +40,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://ollama:11434"
     groq_api_key: str | None = None
 
-    # Vector DB
+    config_store_path: str = "runtime-config.env"
+
+    # Accept legacy environment files; the unused Chroma service was removed.
     chroma_host: str = "chroma"
     chroma_port: int = 8000
 
@@ -57,3 +61,20 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def reload_runtime_settings():
+    """Apply shared UI overrides without changing infrastructure or auth settings."""
+    from dotenv import dotenv_values
+
+    from app.core.env_writer import ALLOWED_KEYS, ENV_PATH
+
+    if ENV_PATH.exists():
+        values = {
+            key.lower(): value
+            for key, value in dotenv_values(ENV_PATH).items()
+            if key in ALLOWED_KEYS and value is not None
+        }
+        validated = Settings(_env_file=None, **(settings.model_dump() | values))
+        for key in values:
+            setattr(settings, key, getattr(validated, key))

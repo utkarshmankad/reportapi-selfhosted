@@ -1,12 +1,15 @@
 """Celery periodic tasks."""
+
 import asyncio
 from datetime import datetime, timezone
+
 from croniter import croniter
 from sqlalchemy import select
-from app.worker.celery_app import celery_app
-from app.db.session import AsyncSessionLocal, engine
+
+from app.core.report_service import ReportGenerationError, generate_report
 from app.db.models import Schedule
-from app.core.report_service import generate_report, ReportGenerationError
+from app.db.session import AsyncSessionLocal, engine
+from app.worker.celery_app import celery_app
 
 
 def _is_due(schedule: Schedule, now: datetime) -> bool:

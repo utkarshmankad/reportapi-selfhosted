@@ -1,7 +1,9 @@
 """Groq LLM provider — OpenAI-compatible chat completions API."""
+
 import httpx
-from app.llm.base import LLMProvider
+
 from app.config import settings
+from app.llm.base import LLMProvider
 
 
 class GroqProvider(LLMProvider):
