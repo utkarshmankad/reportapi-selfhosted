@@ -40,7 +40,7 @@ async def test_all_provider_request_bodies_are_sanitized(monkeypatch, respx_mock
     for key in ("openai_api_key", "anthropic_api_key", "groq_api_key"):
         monkeypatch.setattr(settings, key, "synthetic")
     now = datetime.now(timezone.utc)
-    sensitive = "Alice Smith 4111-1111-1111-1111 alice@example.com 192.0.2.1 2001:db8::1"
+    sensitive = "Alice Smith; 4111-1111-1111-1111; 4111 1111 1111 1111; alice@example.com; 192.0.2.1; 2001:db8::1; ABCDE1234F; 234567890123; 9876543210"
     ticket = Ticket(
         id="D-1",
         title=sensitive,
@@ -74,6 +74,10 @@ async def test_all_provider_request_bodies_are_sanitized(monkeypatch, respx_mock
         "alice@example.com",
         "192.0.2.1",
         "2001:db8::1",
+        "4111 1111 1111 1111",
+        "ABCDE1234F",
+        "234567890123",
+        "9876543210",
     ):
         assert original not in outbound
     assert "Person 1" in outbound

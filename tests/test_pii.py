@@ -109,3 +109,23 @@ def test_ip_sentence_punctuation(text):
 def test_card_adjacent_to_unrelated_numbers():
     assert "4111-1111-1111-1111" not in strip_pii("Person 1 4111-1111-1111-1111")
     assert "4111 1111 1111 1111" not in strip_pii("4111 1111 1111 1111 2 items")
+
+
+@pytest.mark.parametrize("name,mention", [("Straße", "Straße"), ("İpek", "ipek"), ("Iris", "ıris")])
+def test_known_unicode_names_are_replaced_without_casefold_errors(name, mention):
+    now = datetime.now(timezone.utc)
+    row = Ticket(
+        id="1",
+        title=mention,
+        description=mention,
+        status="todo",
+        assignee=name,
+        priority=None,
+        labels=[],
+        sprint=None,
+        url="https://example.com",
+        created_at=now,
+        updated_at=now,
+    )
+    sanitize_tickets([row])
+    assert row.title == row.description == row.assignee == "Person 1"

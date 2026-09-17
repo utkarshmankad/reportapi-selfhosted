@@ -91,14 +91,17 @@ def sanitize_tickets(tickets) -> None:
     Only names actually supplied as assignees can be recognized in prose.
     The alias map exists only during this call and is never persisted.
     """
-    names = sorted(
-        {t.assignee.strip().casefold() for t in tickets if t.assignee and t.assignee.strip()}
-    )
-    aliases = {name: f"Person {index + 1}" for index, name in enumerate(names)}
+    names = sorted({t.assignee.strip() for t in tickets if t.assignee and t.assignee.strip()})
+    aliases = {
+        name: f"Person {index + 1}"
+        for index, name in enumerate(sorted({name.casefold() for name in names}))
+    }
+    names.sort(key=lambda name: (-len(name), name))
+    group_aliases = {f"name_{index}": aliases[name.casefold()] for index, name in enumerate(names)}
     pattern = (
         re.compile(
             r"(?<!\w)(?:"
-            + "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+            + "|".join(f"(?P<name_{index}>{re.escape(name)})" for index, name in enumerate(names))
             + r")(?!\w)",
             re.IGNORECASE,
         )
@@ -109,7 +112,7 @@ def sanitize_tickets(tickets) -> None:
     def clean(value):
         value = strip_pii(value)
         if pattern:
-            value = pattern.sub(lambda m: aliases[m[0].casefold()], value)
+            value = pattern.sub(lambda m: group_aliases[m.lastgroup], value)
         return strip_pii(value)
 
     for ticket in tickets:
