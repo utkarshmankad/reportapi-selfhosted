@@ -28,6 +28,7 @@ export interface Template {
   content: string;
 }
 export interface Config {
+  config_read_only: boolean;
   llm_provider: string;
   jira_configured: boolean;
   asana_configured: boolean;

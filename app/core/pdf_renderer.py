@@ -1,6 +1,6 @@
 """Render PDFs without fetching template-controlled files or network URLs."""
 
-from weasyprint import HTML
+from app.core.render_process import run_render
 
 
 def deny_resource(url, *args, **kwargs):
@@ -8,4 +8,4 @@ def deny_resource(url, *args, **kwargs):
 
 
 def render_pdf(html: str) -> bytes:
-    return HTML(string=html, url_fetcher=deny_resource).write_pdf()
+    return run_render("pdf", html)

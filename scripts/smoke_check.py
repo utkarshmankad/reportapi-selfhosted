@@ -17,6 +17,9 @@ def main():
     with httpx.Client(
         base_url=base_url, headers={"X-Config-Token": "smoke-test-token"}, timeout=120
     ) as client:
+        status = client.get("/api/config").json()
+        assert status["github_configured"]
+        assert status["llm_provider"] == "ollama"
         assert client.get("/health").json()["status"] == "ok"
         assert httpx.get(f"{base_url}/api/reports").status_code == 401
         result = client.post("/api/report/generate", json={"connector": "jira", "board_id": "DEMO"})
@@ -54,6 +57,7 @@ def main():
             assert schedule.last_run_at is not None
             rows = (await db.execute(select(Report))).scalars().all()
             assert len(rows) >= 2
+            assert all(row.model_used == "ollama" for row in rows)
             await db.delete(schedule)
             await db.commit()
 

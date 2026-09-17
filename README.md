@@ -8,10 +8,10 @@ infrastructure.
 
 ReportAPI adds no hosted middleman: raw ticket/issue content is
 fetched directly from your Jira/Asana/GitHub account, filtered for supported personal identifiers
-(emails, PAN/Aadhaar and Indian phone patterns) inside your own containers, and the filtered text and ownership metadata are sent to the LLM provider you configure. Everything
+(emails, PAN/Aadhaar, Indian mobile patterns, cards, IPs and known assignee names) inside your own containers, and the filtered text and ownership metadata are sent to the LLM provider you configure. Everything
 else — the API, the scheduler, the database, the config UI — runs via
 `docker compose up` on your laptop, your homelab, or a Kubernetes
-cluster via the bundled Helm chart.
+cluster after completing the experimental Helm chart setup. Compose is the supported deployment path.
 
 Jira's own tooling targets enterprise teams; ReportAPI itself is built
 to be just as useful for a solo developer or a small team on Asana or
@@ -23,7 +23,7 @@ replacing a manual standup writeup.
 
 v0.5.2 — Community release. Jira + Asana + GitHub Issues connectors ·
 OpenAI/Anthropic/Groq/Ollama · browser-based config UI · scheduled reports ·
-PDF/Markdown output with custom templates · Helm chart. See
+PDF/Markdown output with custom templates · experimental Helm chart. See
 [CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to help push this
 toward v1.
 
@@ -52,8 +52,7 @@ recurring chore. ReportAPI automates that chore:
 1. **Connect** a data source (Jira Cloud, Asana, or GitHub Issues
    today; the connector interface is pluggable for more).
 2. **Fetch** the tickets/tasks for a board, sprint, project, or section.
-3. **Strip PII** from every ticket before it goes anywhere near a
-   third-party API.
+3. **Filter supported identifiers** and replace known assignees with report-local aliases before constructing the LLM prompt. See the [privacy contract](docs/security-boundaries.md#privacy-contract).
 4. **Generate** a narrative using an LLM provider you control the
    choice of — OpenAI, Anthropic, Groq, or a fully local Ollama model with
    zero internet egress.
@@ -88,17 +87,17 @@ aimed at:
 
 ## Architecture
 
-![Architecture diagram](docs/images/architecture.png)
+The browser calls the API through the UI server. The API stores reports in Postgres; Celery uses Redis for scheduled work.
 
 | Component | What it is | Why it's there |
 |---|---|---|
 | **FastAPI API** (`app/`, `:8000`) | The core HTTP service | Connectors, PII stripping, prompt building, template rendering, report/schedule/template CRUD |
 | **Config UI** (`config-ui/`, `:8080`) | Next.js app | Point-and-click setup for Jira credentials, LLM provider, and schedules — no `curl` required |
-| **Celery worker** | Background job runner | Executes report generation jobs off the request path |
-| **Celery beat** | Cron scheduler | Reads the `schedules` table and enqueues due reports onto the worker on cadence |
-| **Postgres** | Relational store | Reports, schedules, templates, and config metadata |
+| **Celery worker** | Background job runner | Checks due schedules and generates scheduled reports |
+| **Celery beat** | Periodic dispatcher | Enqueues the schedule-check task every 60 seconds |
+| **Postgres** | Relational store | Reports, schedules and templates; credentials live in a separate shared runtime file |
 | **Redis** | Job queue | Broker + result backend for Celery |
-| **Ollama** (optional, `--profile ollama`) | Local LLM runtime | Lets you run reports with zero data leaving your machine |
+| **Ollama** (optional, `--profile ollama`) | Local LLM runtime | Keeps LLM inference local; connectors still fetch upstream ticket data |
 
 The services above are defined in [`docker-compose.yml`](docker-compose.yml)
 and comes up with a single `docker compose up --build`. The config UI
@@ -108,7 +107,9 @@ binding.
 
 ## Report generation flow
 
-![Report generation flow diagram](docs/images/report_flow.png)
+**Fetch → deduplicate → filter identifiers and alias assignees → construct prompt → generate narrative → persist → render on request.**
+
+Manual generation runs inline in the HTTP request. Scheduled generation runs in a Celery worker. Durable queued manual jobs and scheduler overlap protection remain roadmap work.
 
 `POST /api/report/generate` is the single code path for both an
 on-demand API call and a Celery-beat-triggered scheduled report — the
@@ -123,10 +124,7 @@ from a worker task instead of an HTTP request.
    Jira host is ever contacted — see
    [`app/core/ssrf_guard.py`](app/core/ssrf_guard.py)); Asana's and
    GitHub's API hosts are fixed, so there's no user-supplied URL to guard.
-3. **PII Stripper** (`app/core/pii.py`) — filters supported identifier patterns
-   in ticket titles and descriptions. It does not guarantee removal of names,
-   assignee identities, IP addresses or every identifier format. This runs before step 4;
-   review the privacy limitations before configuring external providers.
+3. **PII Stripper** (`app/core/pii.py`) — filters supported identifiers across outbound fields, including priority; replaces known assignees with stable report-local aliases. Unknown names and contextual identity clues may remain. See the [precise coverage and limits](docs/security-boundaries.md#privacy-contract).
 4. **Prompt Builder** (`app/core/prompt_builder.py`) — assembles the
    system and user prompt, capped to `MAX_TOKENS_OUTPUT`.
 5. **LLM Provider** (`app/llm/`) — whichever of OpenAI, Anthropic, or
@@ -281,8 +279,7 @@ shows `api` as `running`/`healthy`.
 
 ## Configuration reference
 
-All variables live in `.env` (see [`.env.example`](.env.example) for
-the canonical list).
+Operator settings live in environment variables or `.env` (see [`.env.example`](.env.example)). UI credential saves use the shared runtime file. See [precedence and external secret management](docs/security-boundaries.md#durable-configuration).
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -299,7 +296,12 @@ the canonical list).
 | `OPENAI_API_KEY` | if provider is `openai` | — | OpenAI API key |
 | `ANTHROPIC_API_KEY` | if provider is `anthropic` | — | Anthropic API key |
 | `GROQ_API_KEY` | if provider is `groq` | — | [Groq API key](https://console.groq.com/keys) |
-| `CONFIG_API_TOKEN` | recommended off-localhost | unset | If set, all `/api/*` data endpoints require this value as the `X-Config-Token` header. Leave blank for pure localhost use; **set it** the moment port `8000` is reachable from anywhere other than your own machine |
+| `CONFIG_API_TOKEN` | required in production | unset | Instance token for all `/api/*` routes; missing production token prevents startup |
+| `JIRA_ALLOWED_ORIGINS` | for Jira | empty | Comma-separated operator-approved origins |
+| `OLLAMA_ALLOWED_ORIGINS` | for Ollama | `http://ollama:11434` | Operator-approved Ollama origins |
+| `OUTBOUND_PRIVATE_ORIGINS` | for internal upstreams | `http://ollama:11434` | Exact approved origins also permitted on private networks |
+| `CONFIG_READ_ONLY` | no | `false` | External secret management; ignore overrides and disable UI saves |
+| `CONFIG_STORE_PATH` | no | `runtime-config.env` | Shared runtime file; Compose sets `/config/runtime.env` |
 
 ## Using it
 
@@ -352,10 +354,10 @@ sample data), but nothing is sent to any external LLM API.
 
 ## Deploying on Kubernetes
 
-A Helm chart lives in [`helm/reportapi/`](helm/reportapi/):
+An **experimental, incomplete** Helm chart lives in [`helm/reportapi/`](helm/reportapi/). It is not a turnkey supported deployment: database/Redis provisioning, shared config storage and deployment parity need the Sprint 6 work. Use Compose for the supported path. The chart skeleton can be inspected with:
 
 ```bash
-helm install reportapi ./helm/reportapi \
+helm template reportapi ./helm/reportapi \
   --set envSecret.JIRA_API_TOKEN=... \
   --set envSecret.OPENAI_API_KEY=...
 ```
@@ -391,11 +393,9 @@ workflow.
 
 ## Security
 
-- PII stripping runs on every ticket before it reaches any LLM
-  (`app/core/pii.py`).
-- Jira/Ollama connection-test URLs are SSRF-guarded. Runtime outbound policy
-  still needs the hardening described in the roadmap. PDF templates cannot
-  fetch external resources.
+- Supported identifier filtering and report-local assignee aliases run before every LLM call; this is not complete anonymization.
+- Jira/Ollama save, test and runtime calls enforce operator origin allowlists and DNS-pinned connections. Redirects and unsafe address ranges are blocked.
+- Template/PDF rendering has process, time, memory and size limits; external resources are denied. See [security boundaries](docs/security-boundaries.md).
 - All data endpoints (`/api/*`) support token-gated auth via
   `CONFIG_API_TOKEN` — set this whenever port `8000` is reachable
   beyond your own machine.

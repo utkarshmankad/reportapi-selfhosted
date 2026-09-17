@@ -8,7 +8,7 @@ grouped into sections. The connector reuses the Jira-shaped `board_id` /
 
 import httpx
 
-from app.config import settings
+from app.config import Settings, settings
 from app.connectors.base import Connector
 from app.models.ticket import Ticket
 
@@ -31,10 +31,11 @@ SECTION_STATUS_HINTS = {
 
 
 class AsanaConnector(Connector):
-    def __init__(self):
-        if not settings.asana_pat:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.asana_pat:
             raise ValueError("Asana credentials not configured. Set ASANA_PAT in your environment.")
-        self.headers = {"Authorization": f"Bearer {settings.asana_pat}"}
+        self.headers = {"Authorization": f"Bearer {config.asana_pat}"}
 
     async def authenticate(self) -> bool:
         async with httpx.AsyncClient(headers=self.headers, timeout=10.0) as client:

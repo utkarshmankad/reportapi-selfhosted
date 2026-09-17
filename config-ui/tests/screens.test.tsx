@@ -342,3 +342,14 @@ it("handles template errors and cancelled deletion", async () => {
     "Service unavailable",
   );
 });
+
+it("identifies externally managed connections and removes save forms", async () => {
+  api.mockResolvedValueOnce({ config_read_only: true, llm_provider: "ollama" });
+  render(<Setup token="t" />);
+  expect(
+    await screen.findByText(/Connections are managed by your operator/),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "Save connection" }),
+  ).not.toBeInTheDocument();
+});

@@ -38,7 +38,7 @@ async def test_generation_scrubs_before_provider_and_persists(database, monkeypa
     source = MagicMock(return_value=MagicMock(fetch=AsyncMock(return_value=[ticket, ticket])))
     monkeypatch.setattr("app.core.report_service.JiraConnector", source)
     llm = MagicMock(generate=AsyncMock(return_value=("A report", 15)))
-    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda: llm)
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
     report, count = await generate_report(database, "jira", "DEMO", None)
     assert count == 1
     assert "test@example.com" not in llm.generate.call_args.kwargs["user_content"]

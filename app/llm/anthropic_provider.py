@@ -2,7 +2,7 @@
 
 import httpx
 
-from app.config import settings
+from app.config import Settings, settings
 from app.llm.base import LLMProvider
 
 
@@ -10,10 +10,11 @@ class AnthropicProvider(LLMProvider):
     MODEL = "claude-sonnet-4-5"
     API_VERSION = "2023-06-01"
 
-    def __init__(self):
-        if not settings.anthropic_api_key:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
-        self.api_key = settings.anthropic_api_key
+        self.api_key = config.anthropic_api_key
 
     async def generate(
         self,

@@ -8,12 +8,9 @@ filesystem or OS access available to template authors.
 
 from datetime import datetime, timezone
 
-from jinja2.exceptions import TemplateError
-from jinja2.sandbox import SandboxedEnvironment
-
+from app.core.render_process import TemplateRenderError as TemplateRenderError
+from app.core.render_process import run_render
 from app.db.models import Report
-
-_env = SandboxedEnvironment(autoescape=True)
 
 DEFAULT_TEMPLATE = """\
 <!DOCTYPE html>
@@ -37,10 +34,6 @@ DEFAULT_TEMPLATE = """\
 """
 
 
-class TemplateRenderError(Exception):
-    pass
-
-
 def _build_context(report: Report) -> dict:
     return {
         "report": {
@@ -56,19 +49,15 @@ def _build_context(report: Report) -> dict:
 
 
 def validate_template(content: str) -> None:
-    """Raise TemplateRenderError if the template has a syntax error."""
-    try:
-        _env.from_string(content)
-    except TemplateError as e:
-        raise TemplateRenderError(f"Invalid template: {str(e)}")
+    run_render("validate", content)
 
 
 def render_template(content: str, report: Report) -> str:
-    try:
-        template = _env.from_string(content)
-        return template.render(**_build_context(report))
-    except TemplateError as e:
-        raise TemplateRenderError(f"Template rendering failed: {str(e)}")
+    return run_render("html", content, _build_context(report)).decode()
+
+
+def render_report_pdf(content: str, report: Report) -> bytes:
+    return run_render("report_pdf", content, _build_context(report))
 
 
 def render_markdown(report: Report) -> str:

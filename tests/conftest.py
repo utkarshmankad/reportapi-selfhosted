@@ -31,3 +31,11 @@ def isolated_settings(monkeypatch, tmp_path):
         monkeypatch.setattr(settings, key, None)
     monkeypatch.setattr(settings, "llm_provider", "openai")
     monkeypatch.setattr(settings, "ollama_base_url", "http://ollama:11434")
+
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "config_read_only", False)
+    monkeypatch.setattr(
+        settings, "jira_allowed_origins", "https://test.atlassian.net,https://example.com"
+    )
+    monkeypatch.setattr(settings, "ollama_allowed_origins", "http://ollama:11434")
+    monkeypatch.setattr(settings, "outbound_private_origins", "http://ollama:11434")

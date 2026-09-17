@@ -3,10 +3,10 @@
 import httpx
 from fastapi import APIRouter, Depends
 
-from app.config import reload_runtime_settings, settings
+from app.config import reload_runtime_settings
 from app.core.config_auth import require_config_token
 from app.core.env_writer import InvalidEnvValueError, upsert_env_values
-from app.core.ssrf_guard import UnsafeURLError, assert_safe_url
+from app.core.ssrf_guard import UnsafeURLError, safe_client, validate_target
 from app.models.config import (
     AsanaConfigRequest,
     ConfigStatus,
@@ -23,17 +23,18 @@ router = APIRouter(
 
 @router.get("", response_model=ConfigStatus)
 async def get_config_status():
-    reload_runtime_settings()
+    config = reload_runtime_settings()
     return ConfigStatus(
-        app_env=settings.app_env,
-        llm_provider=settings.llm_provider,
-        jira_configured=bool(settings.jira_url and settings.jira_email and settings.jira_api_token),
-        asana_configured=bool(settings.asana_pat),
-        github_configured=bool(settings.github_pat),
-        openai_configured=bool(settings.openai_api_key),
-        anthropic_configured=bool(settings.anthropic_api_key),
-        ollama_base_url=settings.ollama_base_url,
-        groq_configured=bool(settings.groq_api_key),
+        config_read_only=config.config_read_only,
+        app_env=config.app_env,
+        llm_provider=config.llm_provider,
+        jira_configured=bool(config.jira_url and config.jira_email and config.jira_api_token),
+        asana_configured=bool(config.asana_pat),
+        github_configured=bool(config.github_pat),
+        openai_configured=bool(config.openai_api_key),
+        anthropic_configured=bool(config.anthropic_api_key),
+        ollama_base_url=config.ollama_base_url,
+        groq_configured=bool(config.groq_api_key),
     )
 
 
@@ -42,27 +43,29 @@ async def test_jira_connection(request: JiraConfigRequest):
     # Jira URL should always be a public Atlassian Cloud host — never a
     # private/internal address, so no allow_private here.
     try:
-        assert_safe_url(request.jira_url, allow_private=False)
-    except UnsafeURLError as e:
+        await validate_target(request.jira_url, "jira")
+    except (UnsafeURLError, TimeoutError) as e:
         return TestResult(ok=False, detail=f"Refusing to test that URL: {e}")
 
     try:
-        async with httpx.AsyncClient(
+        async with safe_client(
+            request.jira_url,
+            "jira",
             auth=(request.jira_email, request.jira_api_token),
             timeout=10.0,
-            follow_redirects=False,
         ) as client:
             response = await client.get(f"{request.jira_url.rstrip('/')}/rest/api/3/myself")
         if response.status_code == 200:
             return TestResult(ok=True, detail="Connected to Jira successfully.")
         return TestResult(ok=False, detail=f"Jira responded with status {response.status_code}.")
-    except Exception as e:
-        return TestResult(ok=False, detail=f"Could not reach Jira: {str(e)}")
+    except Exception:
+        return TestResult(ok=False, detail="Could not reach Jira. Check connection settings.")
 
 
 @router.post("/jira", response_model=TestResult)
 async def save_jira_config(request: JiraConfigRequest):
     try:
+        await validate_target(request.jira_url, "jira")
         upsert_env_values(
             {
                 "JIRA_URL": request.jira_url,
@@ -70,7 +73,7 @@ async def save_jira_config(request: JiraConfigRequest):
                 "JIRA_API_TOKEN": request.jira_api_token,
             }
         )
-    except InvalidEnvValueError as e:
+    except (InvalidEnvValueError, UnsafeURLError, TimeoutError) as e:
         return TestResult(ok=False, detail=str(e))
     reload_runtime_settings()
     return TestResult(ok=True, detail="Saved. New reports will use these settings.")
@@ -89,15 +92,15 @@ async def test_asana_connection(request: AsanaConfigRequest):
         if response.status_code == 200:
             return TestResult(ok=True, detail="Connected to Asana successfully.")
         return TestResult(ok=False, detail=f"Asana responded with status {response.status_code}.")
-    except Exception as e:
-        return TestResult(ok=False, detail=f"Could not reach Asana: {str(e)}")
+    except Exception:
+        return TestResult(ok=False, detail="Could not reach Asana. Check connection settings.")
 
 
 @router.post("/asana", response_model=TestResult)
 async def save_asana_config(request: AsanaConfigRequest):
     try:
         upsert_env_values({"ASANA_PAT": request.asana_pat})
-    except InvalidEnvValueError as e:
+    except (InvalidEnvValueError, UnsafeURLError, TimeoutError) as e:
         return TestResult(ok=False, detail=str(e))
     reload_runtime_settings()
     return TestResult(ok=True, detail="Saved. New reports will use these settings.")
@@ -119,15 +122,15 @@ async def test_github_connection(request: GitHubConfigRequest):
         if response.status_code == 200:
             return TestResult(ok=True, detail="Connected to GitHub successfully.")
         return TestResult(ok=False, detail=f"GitHub responded with status {response.status_code}.")
-    except Exception as e:
-        return TestResult(ok=False, detail=f"Could not reach GitHub: {str(e)}")
+    except Exception:
+        return TestResult(ok=False, detail="Could not reach GitHub. Check connection settings.")
 
 
 @router.post("/github", response_model=TestResult)
 async def save_github_config(request: GitHubConfigRequest):
     try:
         upsert_env_values({"GITHUB_PAT": request.github_pat})
-    except InvalidEnvValueError as e:
+    except (InvalidEnvValueError, UnsafeURLError, TimeoutError) as e:
         return TestResult(ok=False, detail=str(e))
     reload_runtime_settings()
     return TestResult(ok=True, detail="Saved. New reports will use these settings.")
@@ -171,13 +174,15 @@ async def test_llm_connection(request: LLMConfigRequest):
                 )
         else:  # ollama — intentionally reachable on the private docker
             # network, but still blocked from loopback/link-local/metadata.
-            base_url = (request.ollama_base_url or settings.ollama_base_url).rstrip("/")
+            base_url = (
+                request.ollama_base_url or reload_runtime_settings().ollama_base_url
+            ).rstrip("/")
             try:
-                assert_safe_url(base_url, allow_private=True)
-            except UnsafeURLError as e:
+                await validate_target(base_url, "ollama")
+            except (UnsafeURLError, TimeoutError) as e:
                 return TestResult(ok=False, detail=f"Refusing to test that URL: {e}")
 
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            async with safe_client(base_url, "ollama", timeout=10.0) as client:
                 response = await client.get(f"{base_url}/api/tags")
 
         if response.status_code == 200:
@@ -185,8 +190,10 @@ async def test_llm_connection(request: LLMConfigRequest):
         return TestResult(
             ok=False, detail=f"{request.llm_provider} responded with status {response.status_code}."
         )
-    except Exception as e:
-        return TestResult(ok=False, detail=f"Could not reach {request.llm_provider}: {str(e)}")
+    except Exception:
+        return TestResult(
+            ok=False, detail=f"Could not reach {request.llm_provider}. Check connection settings."
+        )
 
 
 @router.post("/llm", response_model=TestResult)
@@ -202,8 +209,12 @@ async def save_llm_config(request: LLMConfigRequest):
         values["OLLAMA_BASE_URL"] = request.ollama_base_url
 
     try:
+        if request.llm_provider == "ollama":
+            await validate_target(
+                request.ollama_base_url or reload_runtime_settings().ollama_base_url, "ollama"
+            )
         upsert_env_values(values)
-    except InvalidEnvValueError as e:
+    except (InvalidEnvValueError, UnsafeURLError, TimeoutError) as e:
         return TestResult(ok=False, detail=str(e))
     reload_runtime_settings()
     return TestResult(ok=True, detail="Saved. New reports will use these settings.")

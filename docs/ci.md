@@ -58,4 +58,20 @@ Credential saves write a dedicated `CONFIG_STORE_PATH` (default `runtime-config.
 
 Reports currently generate within the HTTP request. The screen displays progress until it completes; it is not a durable background-job UI. Schedules run in UTC and show **last attempt**, not a guaranteed successful run. Output templates affect PDF downloads; they are not accepted silently at generation time. PDF external images/stylesheets are disabled.
 
-Unused Chroma and JWT dependency scaffolding was removed to eliminate vulnerable packages without affecting the implemented report pipeline. WeasyPrint and Next.js were updated to patched versions. Known connector pagination, scheduler concurrency, privacy coverage, report provenance and Helm dependency gaps from the roadmap remain separate work.
+Unused Chroma and JWT dependency scaffolding was removed to eliminate vulnerable packages without affecting the implemented report pipeline. WeasyPrint and Next.js were updated to patched versions. Known connector pagination, scheduler concurrency, report provenance and Helm dependency gaps from the roadmap remain separate work.
+
+
+## Sprint 1 regressions
+
+Unit coverage includes every registered data route's auth boundary, all four
+providers' captured request bodies, formatted cards/IPs/assignee aliases,
+operator destination allowlists, DNS rebinding, numeric dialing with TLS hostname
+verification, redirects, response limits, renderer limits, concurrent config
+writers, literal secrets and per-job snapshots. Coverage includes render subprocesses.
+The Linux CI run additionally verifies the renderer's address-space limit.
+
+The Compose smoke stack starts in production with an instance token and an
+unconfigured cloud provider. It saves Ollama configuration and a synthetic GitHub
+credential through HTTP, recreates API/worker/beat while retaining only its own
+shared volume, and verifies saved configuration through API generation and a real
+Celery roundtrip. This detects accidental fallback to the startup provider.
