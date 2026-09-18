@@ -53,6 +53,8 @@ def report():
         model_used="test-model",
         tokens_used=20,
         output_format="text",
+        is_truncated=False,
+        truncation_reason=None,
         created_at=datetime.now(timezone.utc),
     )
 

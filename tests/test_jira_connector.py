@@ -8,6 +8,7 @@ from app.connectors.jira import JiraConnector
 @pytest.fixture
 def mock_jira_search_response():
     return {
+        "total": 1,
         "issues": [
             {
                 "key": "PROJ-123",
@@ -33,7 +34,7 @@ def mock_jira_search_response():
                     "sprint": [{"name": "Sprint 14"}],
                 },
             }
-        ]
+        ],
     }
 
 
@@ -49,7 +50,8 @@ async def test_fetch_normalises_tickets(mock_jira_search_response, monkeypatch):
     )
 
     connector = JiraConnector()
-    tickets = await connector.fetch({"board_id": "PROJ"})
+    result = await connector.fetch({"board_id": "PROJ"})
+    tickets = result.tickets
 
     assert len(tickets) == 1
     assert tickets[0].id == "PROJ-123"

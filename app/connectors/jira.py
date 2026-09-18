@@ -1,7 +1,7 @@
 """Jira connector."""
 
 from app.config import Settings, settings
-from app.connectors.base import Connector
+from app.connectors.base import Connector, FetchResult
 from app.core.ssrf_guard import safe_client
 from app.models.report import validate_connector_scope
 from app.models.ticket import Ticket
@@ -12,6 +12,10 @@ STATUS_MAP = {
     "Done": "done",
     "Blocked": "blocked",
 }
+
+PAGE_SIZE = 100
+MAX_PAGES = 50
+MAX_RECORDS = 5000
 
 
 class JiraConnector(Connector):
@@ -30,7 +34,7 @@ class JiraConnector(Connector):
             response = await client.get(f"{self.base_url}/rest/api/3/myself")
             return response.status_code == 200
 
-    async def fetch(self, config: dict) -> list[Ticket]:
+    async def fetch(self, config: dict) -> FetchResult:
         board_id = config.get("board_id")
         sprint_id = config.get("sprint_id")
         validate_connector_scope("jira", board_id, sprint_id)
@@ -42,41 +46,80 @@ class JiraConnector(Connector):
         else:
             raise ValueError("config must include either 'board_id' or 'sprint_id'")
 
-        async with safe_client(self.base_url, "jira", auth=self.auth, timeout=15.0) as client:
-            response = await client.get(
-                f"{self.base_url}/rest/api/3/search",
-                params={
-                    "jql": jql,
-                    "maxResults": 100,
-                    "fields": "summary,description,status,assignee,priority,"
-                    "labels,created,updated,sprint",
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-
         tickets: list[Ticket] = []
-        for issue in data.get("issues", []):
-            fields = issue["fields"]
-            raw_status = fields["status"]["name"]
+        truncated = False
+        truncation_reason: str | None = None
+        start_at = 0
+        seen_start_ats: set[int] = set()
 
-            tickets.append(
-                Ticket(
-                    id=issue["key"],
-                    title=fields.get("summary", ""),
-                    description=self._extract_description(fields.get("description")),
-                    status=STATUS_MAP.get(raw_status, "todo"),
-                    assignee=(fields.get("assignee") or {}).get("displayName"),
-                    priority=(fields.get("priority") or {}).get("name"),
-                    labels=fields.get("labels", []),
-                    created_at=fields["created"],
-                    updated_at=fields["updated"],
-                    sprint=self._extract_sprint_name(fields.get("sprint")),
-                    url=f"{self.base_url}/browse/{issue['key']}",
-                )
-            )
+        async with safe_client(self.base_url, "jira", auth=self.auth, timeout=15.0) as client:
+            for page in range(MAX_PAGES):
+                if start_at in seen_start_ats:
+                    truncated = True
+                    truncation_reason = "Jira returned a repeated pagination cursor"
+                    break
+                seen_start_ats.add(start_at)
 
-        return tickets
+                try:
+                    response = await client.get(
+                        f"{self.base_url}/rest/api/3/search",
+                        params={
+                            "jql": jql,
+                            "startAt": start_at,
+                            "maxResults": PAGE_SIZE,
+                            "fields": "summary,description,status,assignee,priority,"
+                            "labels,created,updated,sprint",
+                        },
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                except Exception:
+                    if page == 0:
+                        raise
+                    truncated = True
+                    truncation_reason = f"Jira page fetch failed at offset {start_at}"
+                    break
+
+                issues = data.get("issues", [])
+                for issue in issues:
+                    fields = issue["fields"]
+                    raw_status = fields["status"]["name"]
+
+                    tickets.append(
+                        Ticket(
+                            id=issue["key"],
+                            title=fields.get("summary", ""),
+                            description=self._extract_description(fields.get("description")),
+                            status=STATUS_MAP.get(raw_status, "todo"),
+                            assignee=(fields.get("assignee") or {}).get("displayName"),
+                            priority=(fields.get("priority") or {}).get("name"),
+                            labels=fields.get("labels", []),
+                            created_at=fields["created"],
+                            updated_at=fields["updated"],
+                            sprint=self._extract_sprint_name(fields.get("sprint")),
+                            url=f"{self.base_url}/browse/{issue['key']}",
+                        )
+                    )
+
+                total = data.get("total")
+                start_at += len(issues)
+                if len(tickets) >= MAX_RECORDS:
+                    truncated = total is not None and start_at < total
+                    if truncated:
+                        truncation_reason = f"Reached the {MAX_RECORDS}-record fetch limit"
+                    break
+                if not issues:
+                    break
+                if total is not None and start_at >= total:
+                    break
+            else:
+                # Exhausted MAX_PAGES without the source signaling completion.
+                truncated = True
+                truncation_reason = f"Reached the {MAX_PAGES}-page fetch limit"
+
+        return FetchResult(
+            tickets=tickets, truncated=truncated, truncation_reason=truncation_reason
+        )
 
     @staticmethod
     def _extract_description(description_field) -> str:

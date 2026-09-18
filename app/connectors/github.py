@@ -9,11 +9,15 @@ to that milestone.
 import httpx
 
 from app.config import Settings, settings
-from app.connectors.base import Connector
+from app.connectors.base import Connector, FetchResult
 from app.models.report import validate_connector_scope
 from app.models.ticket import Ticket
 
 API_BASE = "https://api.github.com"
+
+PAGE_SIZE = 100
+MAX_PAGES = 50
+MAX_RECORDS = 5000
 
 # GitHub issues only have an open/closed state natively. Status is inferred
 # from labels, falling back to open/closed.
@@ -46,51 +50,76 @@ class GitHubConnector(Connector):
             response = await client.get(f"{API_BASE}/user")
             return response.status_code == 200
 
-    async def fetch(self, config: dict) -> list[Ticket]:
+    async def fetch(self, config: dict) -> FetchResult:
         repo = config.get("board_id")
         milestone = config.get("sprint_id")
         validate_connector_scope("github", repo, milestone)
         if not repo:
             raise ValueError("config must include 'board_id' as 'owner/repo'")
 
-        params = {"state": "all", "per_page": 100}
-        if milestone:
-            params["milestone"] = milestone
+        tickets: list[Ticket] = []
+        truncated = False
+        truncation_reason: str | None = None
 
         async with httpx.AsyncClient(headers=self.headers, timeout=15.0) as client:
-            response = await client.get(f"{API_BASE}/repos/{repo}/issues", params=params)
-            response.raise_for_status()
-            data = response.json()
+            for page in range(1, MAX_PAGES + 1):
+                params = {"state": "all", "per_page": PAGE_SIZE, "page": page}
+                if milestone:
+                    params["milestone"] = milestone
 
-        tickets: list[Ticket] = []
-        for issue in data:
-            # The issues endpoint also returns pull requests; skip them.
-            if "pull_request" in issue:
-                continue
+                try:
+                    response = await client.get(f"{API_BASE}/repos/{repo}/issues", params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                except Exception:
+                    if page == 1:
+                        raise
+                    truncated = True
+                    truncation_reason = f"GitHub page fetch failed at page {page}"
+                    break
 
-            labels = [
-                label.get("name") if isinstance(label, dict) else label
-                for label in issue.get("labels", [])
-            ]
-            labels = [label for label in labels if label]
+                # Pull requests never consume the issue record limit — they're
+                # filtered before counting toward MAX_RECORDS or truncation.
+                issues_only = [issue for issue in data if "pull_request" not in issue]
 
-            tickets.append(
-                Ticket(
-                    id=str(issue["number"]),
-                    title=issue.get("title", ""),
-                    description=issue.get("body") or "",
-                    status=self._resolve_status(issue, labels),
-                    assignee=(issue.get("assignee") or {}).get("login"),
-                    priority=self._extract_priority(labels),
-                    labels=labels,
-                    created_at=issue["created_at"],
-                    updated_at=issue["updated_at"],
-                    sprint=(issue.get("milestone") or {}).get("title"),
-                    url=issue.get("html_url", ""),
-                )
-            )
+                for issue in issues_only:
+                    labels = [
+                        label.get("name") if isinstance(label, dict) else label
+                        for label in issue.get("labels", [])
+                    ]
+                    labels = [label for label in labels if label]
 
-        return tickets
+                    tickets.append(
+                        Ticket(
+                            id=str(issue["number"]),
+                            title=issue.get("title", ""),
+                            description=issue.get("body") or "",
+                            status=self._resolve_status(issue, labels),
+                            assignee=(issue.get("assignee") or {}).get("login"),
+                            priority=self._extract_priority(labels),
+                            labels=labels,
+                            created_at=issue["created_at"],
+                            updated_at=issue["updated_at"],
+                            sprint=(issue.get("milestone") or {}).get("title"),
+                            url=issue.get("html_url", ""),
+                        )
+                    )
+
+                is_last_page = len(data) < PAGE_SIZE
+                if len(tickets) >= MAX_RECORDS:
+                    truncated = not is_last_page
+                    if truncated:
+                        truncation_reason = f"Reached the {MAX_RECORDS}-record fetch limit"
+                    break
+                if is_last_page:
+                    break
+            else:
+                truncated = True
+                truncation_reason = f"Reached the {MAX_PAGES}-page fetch limit"
+
+        return FetchResult(
+            tickets=tickets, truncated=truncated, truncation_reason=truncation_reason
+        )
 
     @staticmethod
     def _resolve_status(issue: dict, labels: list[str]) -> str:

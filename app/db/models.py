@@ -23,6 +23,8 @@ class Report(Base):
     narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
     error_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    truncation_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

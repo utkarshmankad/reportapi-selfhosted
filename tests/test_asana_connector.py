@@ -36,7 +36,8 @@ async def test_fetch_normalises_tasks(mock_asana_tasks_response, monkeypatch):
     )
 
     connector = AsanaConnector()
-    tickets = await connector.fetch({"board_id": "1200"})
+    result = await connector.fetch({"board_id": "1200"})
+    tickets = result.tickets
 
     assert len(tickets) == 1
     assert tickets[0].id == "1201"
@@ -76,7 +77,8 @@ async def test_fetch_falls_back_to_completed_flag(monkeypatch):
     )
 
     connector = AsanaConnector()
-    tickets = await connector.fetch({"board_id": "1200"})
+    result = await connector.fetch({"board_id": "1200"})
+    tickets = result.tickets
 
     assert tickets[0].status == "done"
     assert tickets[0].sprint is None
@@ -93,7 +95,8 @@ async def test_fetch_by_section_uses_section_endpoint(monkeypatch):
     )
 
     connector = AsanaConnector()
-    tickets = await connector.fetch({"sprint_id": "555"})
+    result = await connector.fetch({"sprint_id": "555"})
+    tickets = result.tickets
 
     assert tickets == []
 

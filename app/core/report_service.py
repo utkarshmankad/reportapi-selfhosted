@@ -63,12 +63,13 @@ async def generate_report(
         raise ReportGenerationError(500, str(e))
 
     try:
-        tickets = await source.fetch({"board_id": board_id, "sprint_id": sprint_id})
+        fetch_result = await source.fetch({"board_id": board_id, "sprint_id": sprint_id})
     except Exception:
         raise ReportGenerationError(
             502, f"{connector.capitalize()} fetch failed; check connection settings"
         )
 
+    tickets = fetch_result.tickets
     if not tickets:
         raise ReportGenerationError(422, "No tickets found for the given filter")
 
@@ -90,11 +91,13 @@ async def generate_report(
 
     report = Report(
         connector=connector,
-        status="complete",
+        status="partial" if fetch_result.truncated else "complete",
         model_used=config.llm_provider,
         tokens_used=tokens_used,
         narrative=narrative,
         output_format=output_format,
+        is_truncated=fetch_result.truncated,
+        truncation_reason=fetch_result.truncation_reason,
     )
     db.add(report)
     await db.commit()

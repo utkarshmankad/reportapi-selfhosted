@@ -47,6 +47,8 @@ async def generate_report_route(
         model_used=report.model_used,
         ticket_count=ticket_count,
         output_format=report.output_format,
+        is_truncated=report.is_truncated,
+        truncation_reason=report.truncation_reason,
     )
 
 

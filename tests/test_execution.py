@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.config import settings
+from app.connectors.base import FetchResult
 from app.core.report_service import ReportGenerationError, generate_report
 from app.db.models import Schedule
 from app.models.ticket import Ticket
@@ -35,7 +36,9 @@ async def test_generation_scrubs_before_provider_and_persists(database, monkeypa
         url="https://example.com",
         sprint=None,
     )
-    source = MagicMock(return_value=MagicMock(fetch=AsyncMock(return_value=[ticket, ticket])))
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket, ticket])))
+    )
     monkeypatch.setattr("app.core.report_service.JiraConnector", source)
     llm = MagicMock(generate=AsyncMock(return_value=("A report", 15)))
     monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
@@ -64,21 +67,23 @@ async def test_generation_failures_do_not_commit(database, monkeypatch, case, st
     source = MagicMock(
         return_value=MagicMock(
             fetch=AsyncMock(
-                return_value=[
-                    Ticket(
-                        id="1",
-                        title="t",
-                        description="",
-                        status="todo",
-                        assignee=None,
-                        priority=None,
-                        labels=[],
-                        created_at=now,
-                        updated_at=now,
-                        url="https://example.com",
-                        sprint=None,
-                    )
-                ]
+                return_value=FetchResult(
+                    tickets=[
+                        Ticket(
+                            id="1",
+                            title="t",
+                            description="",
+                            status="todo",
+                            assignee=None,
+                            priority=None,
+                            labels=[],
+                            created_at=now,
+                            updated_at=now,
+                            url="https://example.com",
+                            sprint=None,
+                        )
+                    ]
+                )
             )
         )
     )
@@ -87,7 +92,7 @@ async def test_generation_failures_do_not_commit(database, monkeypatch, case, st
     if case == "fetch":
         source.return_value.fetch.side_effect = RuntimeError("offline")
     if case == "empty":
-        source.return_value.fetch.return_value = []
+        source.return_value.fetch.return_value = FetchResult(tickets=[])
     monkeypatch.setattr("app.core.report_service.JiraConnector", source)
     monkeypatch.setattr(
         "app.core.report_service.get_llm_provider",

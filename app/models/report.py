@@ -71,6 +71,8 @@ class ReportResponse(BaseModel):
     tokens_used: int
     model_used: str
     output_format: str
+    is_truncated: bool
+    truncation_reason: str | None
     created_at: datetime
 
 
@@ -82,3 +84,5 @@ class GenerateReportResponse(BaseModel):
     model_used: str
     ticket_count: int
     output_format: str
+    is_truncated: bool
+    truncation_reason: str | None = None
