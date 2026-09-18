@@ -24,6 +24,12 @@ beat:
 configUi:
   enabled: true
   port: 8080
+  # The public origin the UI is served from once an Ingress/reverse proxy
+  # sits in front of it (e.g. "https://reports.example.com"). Required for
+  # the same-origin write check in app/api/[...path]/route.ts to work
+  # correctly when the fronting proxy doesn't set X-Forwarded-Proto/Host
+  # the way the UI expects. Leave empty to fall back to those headers.
+  publicOrigin: ""
 
 postgresql:
   enabled: true
