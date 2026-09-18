@@ -56,6 +56,7 @@ class GitHubConnector(Connector):
         validate_connector_scope("github", repo, milestone)
         if not repo:
             raise ValueError("config must include 'board_id' as 'owner/repo'")
+        assigned_means_in_progress = config.get("assigned_means_in_progress", True)
 
         tickets: list[Ticket] = []
         truncated = False
@@ -94,7 +95,7 @@ class GitHubConnector(Connector):
                             id=str(issue["number"]),
                             title=issue.get("title", ""),
                             description=issue.get("body") or "",
-                            status=self._resolve_status(issue, labels),
+                            status=self._resolve_status(issue, labels, assigned_means_in_progress),
                             assignee=(issue.get("assignee") or {}).get("login"),
                             priority=self._extract_priority(labels),
                             labels=labels,
@@ -122,18 +123,23 @@ class GitHubConnector(Connector):
         )
 
     @staticmethod
-    def _resolve_status(issue: dict, labels: list[str]) -> str:
+    def _resolve_status(issue: dict, labels: list[str], assigned_means_in_progress: bool) -> str:
+        # GitHub's closed/open state is the authoritative source-of-truth:
+        # a closed issue is done even if a stale "blocked"/"in progress"
+        # label is still attached.
+        if issue.get("state") == "closed":
+            return "done"
         for label in labels:
             hint = LABEL_STATUS_HINTS.get(label.strip().lower())
             if hint:
                 return hint
-        if issue.get("state") == "closed":
-            return "done"
-        # GitHub issues have no native "in progress" state. An open issue
-        # with an assignee and no explicit status label is being worked,
-        # not sitting untouched — treat it as in_progress rather than
-        # lumping active work into "todo".
-        return "in_progress" if issue.get("assignee") else "todo"
+        # GitHub issues have no native "in progress" state, so treating an
+        # assigned-but-unlabeled open issue as in_progress is a judgment
+        # call, not a fact from the source — make it an explicit,
+        # caller-controlled option rather than baked-in behavior.
+        if assigned_means_in_progress and issue.get("assignee"):
+            return "in_progress"
+        return "todo"
 
     @staticmethod
     def _extract_priority(labels: list[str]) -> str | None:

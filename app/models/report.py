@@ -53,6 +53,10 @@ class GenerateReportRequest(BaseModel):
     sprint_id: str | None = Field(default=None, max_length=100)
     output_format: Literal["text", "markdown", "pdf"] = "text"
     template_id: UUID | None = None
+    # GitHub has no native "in progress" state; treating an assigned-but-
+    # unlabeled open issue as in_progress is a judgment call the caller
+    # should be able to opt out of, not implicit connector behavior.
+    assigned_means_in_progress: bool = True
 
     @model_validator(mode="after")
     def validate_scope(self):

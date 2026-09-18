@@ -54,7 +54,8 @@ class AsanaConnector(Connector):
 
         opt_fields = (
             "name,notes,completed,assignee.name,tags.name,"
-            "created_at,modified_at,memberships.section.name,permalink_url,"
+            "created_at,modified_at,memberships.section.name,memberships.section.gid,"
+            "memberships.project.gid,permalink_url,"
             "custom_fields.name,custom_fields.display_value"
         )
         if section_gid:
@@ -86,12 +87,13 @@ class AsanaConnector(Connector):
                     break
 
                 for task in data.get("data", []):
+                    section_name = self._extract_section_name(task, project_gid, section_gid)
                     tickets.append(
                         Ticket(
                             id=task["gid"],
                             title=task.get("name", ""),
                             description=task.get("notes", "") or "",
-                            status=self._resolve_status(task),
+                            status=self._resolve_status(task, section_name),
                             assignee=(task.get("assignee") or {}).get("name"),
                             priority=self._extract_priority(task),
                             labels=[
@@ -99,7 +101,7 @@ class AsanaConnector(Connector):
                             ],
                             created_at=task["created_at"],
                             updated_at=task["modified_at"],
-                            sprint=self._extract_section_name(task),
+                            sprint=section_name,
                             url=task.get("permalink_url", ""),
                         )
                     )
@@ -129,19 +131,41 @@ class AsanaConnector(Connector):
         )
 
     @staticmethod
-    def _resolve_status(task: dict) -> str:
-        section_name = AsanaConnector._extract_section_name(task)
+    def _resolve_status(task: dict, section_name: str | None) -> str:
+        # Asana's `completed` flag is the authoritative source-of-truth state:
+        # a task marked done stays done regardless of which section (e.g. a
+        # stale "In Progress" section) it's still sitting in.
+        if task.get("completed"):
+            return "done"
         if section_name:
             hint = SECTION_STATUS_HINTS.get(section_name.strip().lower())
             if hint:
                 return hint
-        return "done" if task.get("completed") else "todo"
+        return "todo"
 
     @staticmethod
-    def _extract_section_name(task: dict) -> str | None:
-        memberships = task.get("memberships") or []
-        if memberships and memberships[0].get("section"):
-            return memberships[0]["section"].get("name")
+    def _extract_section_name(
+        task: dict, project_gid: str | None, section_gid: str | None
+    ) -> str | None:
+        # A task can belong to several projects at once, each with its own
+        # section membership. When the response identifies which project a
+        # membership belongs to, only the one matching the queried
+        # project/section is relevant — but a project-scoped task list
+        # commonly returns a single membership without that project gid, in
+        # which case it's unambiguous and used as-is.
+        memberships = [
+            m for m in (task.get("memberships") or []) if (m.get("section") or {}).get("name")
+        ]
+        if not memberships:
+            return None
+        if len(memberships) == 1:
+            return memberships[0]["section"]["name"]
+        for membership in memberships:
+            section = membership["section"]
+            if section_gid and section.get("gid") == section_gid:
+                return section["name"]
+            if project_gid and (membership.get("project") or {}).get("gid") == project_gid:
+                return section["name"]
         return None
 
     @staticmethod

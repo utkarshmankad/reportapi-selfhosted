@@ -35,6 +35,7 @@ async def generate_report_route(
             board_id=request.board_id,
             sprint_id=request.sprint_id,
             output_format=request.output_format,
+            assigned_means_in_progress=request.assigned_means_in_progress,
         )
     except ReportGenerationError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)

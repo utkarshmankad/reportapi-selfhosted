@@ -37,6 +37,7 @@ async def _run_due_schedules() -> int:
                     board_id=schedule.board_id,
                     sprint_id=schedule.sprint_id,
                     output_format=schedule.output_format,
+                    assigned_means_in_progress=schedule.assigned_means_in_progress,
                 )
             except ReportGenerationError:
                 pass

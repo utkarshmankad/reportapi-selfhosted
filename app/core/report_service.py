@@ -42,6 +42,7 @@ async def generate_report(
     board_id: str | None,
     sprint_id: str | None,
     output_format: str = "text",
+    assigned_means_in_progress: bool = True,
 ) -> tuple[Report, int]:
     """
     Fetch tickets, strip PII, generate a narrative, persist the report.
@@ -63,7 +64,13 @@ async def generate_report(
         raise ReportGenerationError(500, str(e))
 
     try:
-        fetch_result = await source.fetch({"board_id": board_id, "sprint_id": sprint_id})
+        fetch_result = await source.fetch(
+            {
+                "board_id": board_id,
+                "sprint_id": sprint_id,
+                "assigned_means_in_progress": assigned_means_in_progress,
+            }
+        )
     except Exception:
         raise ReportGenerationError(
             502, f"{connector.capitalize()} fetch failed; check connection settings"

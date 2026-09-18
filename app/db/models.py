@@ -37,6 +37,7 @@ class Schedule(Base):
     sprint_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
+    assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

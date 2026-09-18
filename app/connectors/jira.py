@@ -13,6 +13,15 @@ STATUS_MAP = {
     "Blocked": "blocked",
 }
 
+# Jira's built-in status category (new/indeterminate/done) is authoritative
+# for workflows with custom status names that aren't in STATUS_MAP above —
+# it reflects where the workflow actually places the ticket, not a guess.
+STATUS_CATEGORY_MAP = {
+    "new": "todo",
+    "indeterminate": "in_progress",
+    "done": "done",
+}
+
 PAGE_SIZE = 100
 MAX_PAGES = 50
 MAX_RECORDS = 5000
@@ -83,14 +92,12 @@ class JiraConnector(Connector):
                 issues = data.get("issues", [])
                 for issue in issues:
                     fields = issue["fields"]
-                    raw_status = fields["status"]["name"]
-
                     tickets.append(
                         Ticket(
                             id=issue["key"],
                             title=fields.get("summary", ""),
                             description=self._extract_description(fields.get("description")),
-                            status=STATUS_MAP.get(raw_status, "todo"),
+                            status=self._resolve_status(fields["status"]),
                             assignee=(fields.get("assignee") or {}).get("displayName"),
                             priority=(fields.get("priority") or {}).get("name"),
                             labels=fields.get("labels", []),
@@ -120,6 +127,14 @@ class JiraConnector(Connector):
         return FetchResult(
             tickets=tickets, truncated=truncated, truncation_reason=truncation_reason
         )
+
+    @staticmethod
+    def _resolve_status(status_field: dict) -> str:
+        name = status_field.get("name")
+        if name in STATUS_MAP:
+            return STATUS_MAP[name]
+        category_key = (status_field.get("statusCategory") or {}).get("key")
+        return STATUS_CATEGORY_MAP.get(category_key, "todo")
 
     @staticmethod
     def _extract_description(description_field) -> str:
