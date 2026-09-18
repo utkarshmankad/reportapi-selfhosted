@@ -3,6 +3,7 @@
 from app.config import Settings, settings
 from app.connectors.base import Connector
 from app.core.ssrf_guard import safe_client
+from app.models.report import validate_connector_scope
 from app.models.ticket import Ticket
 
 STATUS_MAP = {
@@ -32,6 +33,7 @@ class JiraConnector(Connector):
     async def fetch(self, config: dict) -> list[Ticket]:
         board_id = config.get("board_id")
         sprint_id = config.get("sprint_id")
+        validate_connector_scope("jira", board_id, sprint_id)
 
         if sprint_id:
             jql = f"sprint = {sprint_id}"

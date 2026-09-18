@@ -10,6 +10,7 @@ import httpx
 
 from app.config import Settings, settings
 from app.connectors.base import Connector
+from app.models.report import validate_connector_scope
 from app.models.ticket import Ticket
 
 API_BASE = "https://app.asana.com/api/1.0"
@@ -45,9 +46,7 @@ class AsanaConnector(Connector):
     async def fetch(self, config: dict) -> list[Ticket]:
         project_gid = config.get("board_id")
         section_gid = config.get("sprint_id")
-
-        if not project_gid and not section_gid:
-            raise ValueError("config must include either 'board_id' or 'sprint_id'")
+        validate_connector_scope("asana", project_gid, section_gid)
 
         opt_fields = (
             "name,notes,completed,assignee.name,tags.name,"

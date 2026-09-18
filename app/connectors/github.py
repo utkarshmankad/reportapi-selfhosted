@@ -10,6 +10,7 @@ import httpx
 
 from app.config import Settings, settings
 from app.connectors.base import Connector
+from app.models.report import validate_connector_scope
 from app.models.ticket import Ticket
 
 API_BASE = "https://api.github.com"
@@ -48,7 +49,7 @@ class GitHubConnector(Connector):
     async def fetch(self, config: dict) -> list[Ticket]:
         repo = config.get("board_id")
         milestone = config.get("sprint_id")
-
+        validate_connector_scope("github", repo, milestone)
         if not repo:
             raise ValueError("config must include 'board_id' as 'owner/repo'")
 
