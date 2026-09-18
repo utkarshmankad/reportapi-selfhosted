@@ -247,3 +247,43 @@ async def test_dispatch_backfills_bounded_occurrences_after_downtime():
         sched = await db.get(Schedule, schedule.id)
         claimed = await claim_schedule_occurrences(db, sched, occurrences)
     assert len(claimed) == MAX_BACKFILL_OCCURRENCES
+
+
+@pytest.mark.asyncio
+async def test_lost_claim_race_does_not_break_subsequent_session_use():
+    """Regression test: a lost occurrence-claim race used to roll back the
+    whole session, expiring every already-loaded object (including
+    `schedule` itself and any other schedule mid-iteration in the same
+    dispatch pass) and crashing the next plain attribute read with
+    MissingGreenlet. claim_schedule_occurrences must survive a lost race
+    without poisoning the caller's session."""
+    scheduled_for = datetime.now(timezone.utc).replace(microsecond=0)
+
+    async with AsyncSessionLocal() as db:
+        schedule_a = await _make_schedule(db)
+        schedule_b = await _make_schedule(db)
+
+    # Pre-claim the occurrence for schedule_a from a separate session, so
+    # the claim attempt inside the real dispatch-shaped flow below loses
+    # the race and must recover cleanly.
+    async with AsyncSessionLocal() as db:
+        sched_a = await db.get(Schedule, schedule_a.id)
+        pre_claimed = await claim_schedule_occurrences(db, sched_a, [scheduled_for])
+    assert len(pre_claimed) == 1
+
+    async with AsyncSessionLocal() as db:
+        sched_a = await db.get(Schedule, schedule_a.id)
+        sched_b = await db.get(Schedule, schedule_b.id)
+
+        # This call loses the race for schedule_a's occurrence (already
+        # claimed above) and must not expire the session.
+        lost = await claim_schedule_occurrences(db, sched_a, [scheduled_for])
+        assert lost == []
+
+        # Reading schedule_a's own attributes and dispatching a second,
+        # unrelated schedule in the same session/loop — exactly what
+        # app.worker.tasks._dispatch_due_schedules does — must still work.
+        assert sched_a.connector == "jira"
+        won = await claim_schedule_occurrences(db, sched_b, [scheduled_for])
+        assert len(won) == 1
+        assert won[0].schedule_id == schedule_b.id

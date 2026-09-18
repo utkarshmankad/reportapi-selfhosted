@@ -55,13 +55,17 @@ def main():
     assert dispatch_due_schedules.delay().get(timeout=90) >= 1
 
     async def poll_for_schedule_success():
-        async with AsyncSessionLocal() as db:
-            for _ in range(30):
+        # A fresh session per iteration, not one long-lived session reusing
+        # its identity map — otherwise repeated db.get() calls would keep
+        # returning the same cached object and never observe the worker's
+        # update from its own separate session.
+        for _ in range(60):
+            async with AsyncSessionLocal() as db:
                 schedule = await db.get(Schedule, schedule_id)
                 if schedule.last_run_at is not None:
                     return
-                await asyncio.sleep(2)
-            raise AssertionError("Schedule did not complete a successful run within timeout")
+            await asyncio.sleep(2)
+        raise AssertionError("Schedule did not complete a successful run within timeout")
 
     asyncio.run(seed_and_dispose(poll_for_schedule_success))
 

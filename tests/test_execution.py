@@ -544,6 +544,7 @@ async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
     monkeypatch.setattr(tasks, "claim_schedule_occurrences", AsyncMock(return_value=[fake_job]))
     delay = MagicMock()
     monkeypatch.setattr(tasks.execute_report_job, "delay", delay)
+    monkeypatch.setattr(tasks, "_record_scheduler_heartbeat", AsyncMock())
 
     dispatched = await tasks._dispatch_due_schedules()
 
