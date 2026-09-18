@@ -160,8 +160,12 @@ async def generate_report(
         period_end=period_end,
         period_semantics=period_semantics,
     )
-    db.add(report)
-    await db.commit()
-    await db.refresh(report)
+    try:
+        db.add(report)
+        await db.commit()
+        await db.refresh(report)
+    except Exception:
+        await db.rollback()
+        raise ReportGenerationError(500, "Failed to persist the generated report")
 
     return report, len(tickets)

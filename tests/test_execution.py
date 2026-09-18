@@ -18,6 +18,7 @@ def database():
     db = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    db.rollback = AsyncMock()
     return db
 
 
@@ -379,3 +380,33 @@ async def test_generate_report_no_period_uses_unbounded_semantics(database, monk
     assert report.period_start is None
     assert report.period_end is None
     assert report.period_semantics == "unbounded_fetch_snapshot"
+
+
+@pytest.mark.asyncio
+async def test_persistence_failure_rolls_back_and_raises(database, monkeypatch):
+    now = datetime.now(timezone.utc)
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=now,
+        updated_at=now,
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15, False)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+    database.commit.side_effect = RuntimeError("db unavailable")
+
+    with pytest.raises(ReportGenerationError) as error:
+        await generate_report(database, "jira", "D", None)
+    assert error.value.status_code == 500
+    database.rollback.assert_awaited_once()
