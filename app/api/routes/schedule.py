@@ -3,12 +3,13 @@
 from uuid import UUID
 
 from croniter import croniter
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Schedule
+from app.db.models import ReportJob, Schedule
 from app.db.session import get_db
+from app.models.job import ReportJobResponse
 from app.models.schedule import CreateScheduleRequest, ScheduleResponse
 
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
@@ -66,3 +67,23 @@ async def update_schedule(
     await db.commit()
     await db.refresh(schedule)
     return schedule
+
+
+@router.get("/{schedule_id}/jobs", response_model=list[ReportJobResponse])
+async def list_schedule_jobs(
+    schedule_id: UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    schedule = await db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    result = await db.execute(
+        select(ReportJob)
+        .where(ReportJob.schedule_id == schedule_id)
+        .order_by(ReportJob.scheduled_for.desc(), ReportJob.id)
+        .offset(offset)
+        .limit(limit)
+    )
+    return result.scalars().all()

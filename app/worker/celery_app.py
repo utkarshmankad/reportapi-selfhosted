@@ -9,9 +9,13 @@ celery_app = Celery("reportapi", broker=settings.redis_url, backend=settings.red
 celery_app.autodiscover_tasks(["app.worker"])
 
 celery_app.conf.beat_schedule = {
-    "run-due-schedules-every-minute": {
-        "task": "app.worker.tasks.run_due_schedules",
+    "dispatch-due-schedules-every-minute": {
+        "task": "app.worker.tasks.dispatch_due_schedules",
         "schedule": crontab(minute="*"),
+    },
+    "recover-stuck-report-jobs-every-5-minutes": {
+        "task": "app.worker.tasks.recover_stuck_report_jobs",
+        "schedule": crontab(minute="*/5"),
     },
 }
 celery_app.conf.timezone = "UTC"
