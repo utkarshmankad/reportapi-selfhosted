@@ -21,6 +21,25 @@ export interface Schedule extends Scope {
   output_format: Format;
   active: boolean;
   last_run_at: string | null;
+  last_attempted_at?: string | null;
+}
+export type JobStatus = "queued" | "running" | "succeeded" | "failed";
+export interface Job {
+  id: string;
+  status: JobStatus;
+  connector: string;
+  board_id: string | null;
+  sprint_id: string | null;
+  output_format: string;
+  report_id: string | null;
+  error_reason: string | null;
+  attempts: number;
+  schedule_id: string | null;
+  scheduled_for: string | null;
+  queued_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
 }
 export interface Template {
   id: string;
@@ -77,6 +96,34 @@ export async function request<T>(
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
+}
+const TERMINAL_JOB_STATUSES: JobStatus[] = ["succeeded", "failed"];
+// Bounds how long the browser polls a single job before giving up, so a
+// stuck job (or a worker that's down) surfaces as an error instead of an
+// infinite spinner.
+const JOB_POLL_TIMEOUT_MS = 120_000;
+export async function pollJob(
+  // Takes `request` as a parameter, rather than calling the module-level
+  // function directly, so a caller under test can pass its own (mocked)
+  // `request` binding — a same-module call would bypass a `vi.mock` of
+  // this file's `request` export entirely.
+  fetcher: typeof request,
+  id: string,
+  token: string,
+  onUpdate?: (job: Job) => void,
+  intervalMs = 1500,
+): Promise<Job> {
+  const deadline = Date.now() + JOB_POLL_TIMEOUT_MS;
+  for (;;) {
+    const job = await fetcher<Job>(`/report/jobs/${id}`, token);
+    onUpdate?.(job);
+    if (TERMINAL_JOB_STATUSES.includes(job.status)) return job;
+    if (Date.now() >= deadline)
+      throw new Error(
+        "This report is taking longer than expected. Check back in Report history shortly.",
+      );
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 export async function downloadReport(
   id: string,

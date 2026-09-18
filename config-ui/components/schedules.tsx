@@ -5,6 +5,7 @@ import {
   type Schedule,
   type Scope,
   type Format,
+  type Job,
 } from "../lib/api";
 import { ScopeFields, FormatField, Notice } from "./shared";
 
@@ -20,6 +21,10 @@ export function Schedules({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [history, setHistory] = useState<Job[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -45,6 +50,23 @@ export function Schedules({ token }: { token: string }) {
     setScope(empty);
     setCron("0 9 * * 1");
     setFormat("text");
+  }
+  async function toggleHistory(scheduleId: string) {
+    if (historyFor === scheduleId) {
+      setHistoryFor(null);
+      return;
+    }
+    setHistoryFor(scheduleId);
+    setHistory([]);
+    setHistoryError("");
+    setHistoryLoading(true);
+    try {
+      setHistory(await request<Job[]>(`/schedule/${scheduleId}/jobs`, token));
+    } catch (e) {
+      setHistoryError(errorMessage(e));
+    } finally {
+      setHistoryLoading(false);
+    }
   }
   async function mutate(path: string, method: string, body?: unknown) {
     setBusy(true);
@@ -212,12 +234,67 @@ export function Schedules({ token }: { token: string }) {
                         >
                           Delete schedule
                         </button>
+                        <button
+                          className="secondary"
+                          onClick={() => void toggleHistory(row.id)}
+                        >
+                          {historyFor === row.id
+                            ? "Hide history"
+                            : "View history"}
+                        </button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {historyFor && (
+          <div
+            className="table-wrap"
+            role="region"
+            aria-label="Schedule run history"
+          >
+            <h4>Run history</h4>
+            <Notice message={historyError} error />
+            {historyLoading ? (
+              <p role="status">Loading run history…</p>
+            ) : history.length === 0 ? (
+              <p className="empty">No runs recorded yet for this schedule.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scheduled for</th>
+                    <th>Status</th>
+                    <th>Attempts</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((job) => (
+                    <tr key={job.id}>
+                      <td>
+                        {job.scheduled_for
+                          ? new Date(job.scheduled_for).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td>
+                        <span className={`badge ${job.status}`}>
+                          {job.status}
+                        </span>
+                      </td>
+                      <td>{job.attempts}</td>
+                      <td>
+                        {job.error_reason ||
+                          (job.report_id ? "Succeeded" : "—")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </section>
