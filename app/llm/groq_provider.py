@@ -2,17 +2,18 @@
 
 import httpx
 
-from app.config import settings
+from app.config import Settings, settings
 from app.llm.base import LLMProvider
 
 
 class GroqProvider(LLMProvider):
     MODEL = "llama-3.3-70b-versatile"
 
-    def __init__(self):
-        if not settings.groq_api_key:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.groq_api_key:
             raise ValueError("GROQ_API_KEY is not set")
-        self.api_key = settings.groq_api_key
+        self.api_key = config.groq_api_key
 
     async def generate(
         self,

@@ -158,8 +158,11 @@ Pull requests are excluded automatically (GitHub's issues API returns both).
 - **labels** — GitHub labels, as-is.
 - **sprint** — the issue's milestone title, if any.
 
-## PII stripping
+## Privacy and approved destinations
 
-Ticket title and description are stripped of PII (emails, phone numbers,
-national ID formats, card numbers) before they're sent to any LLM,
-regardless of connector — see [llm-config.md](llm-config.md).
+Set `JIRA_ALLOWED_ORIGINS` to your exact Jira origin before saving or using it.
+The UI cannot authorize new destinations. See [outbound policy](security-boundaries.md#outbound-destinations).
+
+All outbound ticket fields use mandatory supported-identifier filtering and
+report-local assignee aliases. Unknown names and contextual clues may remain;
+see [precise privacy coverage](security-boundaries.md#privacy-contract).

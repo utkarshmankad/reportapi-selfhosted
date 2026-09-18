@@ -35,6 +35,8 @@ def upsert_env_values(values: dict[str, str]) -> None:
     """
     Atomically update quoted KEY=VALUE overrides shared by the API and workers.
     """
+    if settings.config_read_only:
+        raise InvalidEnvValueError("Configuration is managed by the operator (read-only)")
     for key, value in values.items():
         if key not in ALLOWED_KEYS:
             raise InvalidEnvValueError(f"'{key}' is not a writable config key")
@@ -53,7 +55,14 @@ def upsert_env_values(values: dict[str, str]) -> None:
             for key, value in values.items():
                 set_key(temporary, key, value, quote_mode="always")
             os.chmod(temporary, 0o600)
+            with open(temporary, "rb") as saved:
+                os.fsync(saved.fileno())
             os.replace(temporary, ENV_PATH)
+            directory = os.open(ENV_PATH.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

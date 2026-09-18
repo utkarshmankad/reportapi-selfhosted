@@ -1,5 +1,6 @@
 """HTTP boundary tests: authentication, validation, CRUD, exports and config."""
 
+import ipaddress
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -213,7 +214,9 @@ def test_schedule_create_edit_pause_delete(client, db):
     ],
 )
 def test_connector_configuration(client, respx_mock, monkeypatch, connector, body):
-    monkeypatch.setattr("app.api.routes.config.assert_safe_url", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.core.ssrf_guard._resolve_ips", lambda host: [ipaddress.ip_address("93.184.216.34")]
+    )
     assert client.post(f"/api/config/{connector}", json=body).json()["ok"]
     assert client.get("/api/config").json()[f"{connector}_configured"]
     route = respx_mock.route().mock(return_value=httpx.Response(200, json={}))
@@ -228,7 +231,9 @@ def test_connector_configuration(client, respx_mock, monkeypatch, connector, bod
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "groq", "ollama"])
 def test_llm_configuration(client, respx_mock, monkeypatch, provider):
-    monkeypatch.setattr("app.api.routes.config.assert_safe_url", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.core.ssrf_guard._resolve_ips", lambda host: [ipaddress.ip_address("93.184.216.34")]
+    )
     body = {"llm_provider": provider, "api_key": "test", "ollama_base_url": "http://ollama:11434"}
     assert client.post("/api/config/llm", json=body).json()["ok"]
     assert client.get("/api/config").json()["llm_provider"] == provider
@@ -241,3 +246,49 @@ def test_llm_configuration(client, respx_mock, monkeypatch, provider):
     body["api_key"] = "bad\nkey"
     if provider != "ollama":
         assert not client.post("/api/config/llm", json=body).json()["ok"]
+
+
+@pytest.mark.parametrize(
+    "service,body",
+    [
+        (
+            "jira",
+            {
+                "jira_url": "https://evil.test",
+                "jira_email": "synthetic",
+                "jira_api_token": "synthetic",
+            },
+        ),
+        ("llm", {"llm_provider": "ollama", "ollama_base_url": "http://127.0.0.1:11434"}),
+    ],
+)
+def test_save_and_test_share_target_policy(client, service, body):
+    from app.core.env_writer import ENV_PATH
+
+    for suffix in ("", "/test"):
+        response = client.post(f"/api/config/{service}{suffix}", json=body)
+        assert response.status_code == 200
+        assert not response.json()["ok"]
+    assert not ENV_PATH.exists()
+
+
+def test_readonly_status_and_secret_isolation(client, monkeypatch):
+    monkeypatch.setattr(settings, "config_read_only", True)
+    monkeypatch.setattr(settings, "github_pat", "private-operator-token")
+    status = client.get("/api/config")
+    assert status.json()["config_read_only"] is True
+    assert "private-operator-token" not in status.text
+    assert not client.post("/api/config/github", json={"github_pat": "replace"}).json()["ok"]
+    assert settings.github_pat == "private-operator-token"
+
+
+def test_every_registered_data_route_requires_token(client, monkeypatch):
+    monkeypatch.setattr(settings, "config_api_token", "matrix-token")
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if path.startswith("/api/"):
+            for parameter in ("report_id", "template_id", "schedule_id"):
+                path = path.replace("{" + parameter + "}", str(uuid4()))
+            for method in route.methods:
+                assert client.request(method, path).status_code == 401, (method, path)
+    assert client.get("/api/reports", headers={"X-Config-Token": "matrix-token"}).status_code == 200

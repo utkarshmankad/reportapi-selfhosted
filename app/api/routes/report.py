@@ -5,14 +5,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
-from app.core.pdf_renderer import render_pdf
 from app.core.report_service import ReportGenerationError, generate_report
 from app.core.template_renderer import (
     DEFAULT_TEMPLATE,
     TemplateRenderError,
     render_markdown,
-    render_template,
+    render_report_pdf,
 )
 from app.db.models import Report, ReportTemplate
 from app.db.session import get_db
@@ -76,8 +76,7 @@ async def render_report(
             template_content = template.content
 
         try:
-            html = render_template(template_content, report)
-            pdf_bytes = render_pdf(html)
+            pdf_bytes = await run_in_threadpool(render_report_pdf, template_content, report)
         except TemplateRenderError as e:
             raise HTTPException(status_code=422, detail=str(e))
 

@@ -21,7 +21,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 Uses `claude-sonnet-4-5`.
 
-## Ollama (fully local, zero internet traffic)
+## Ollama (local inference)
 
 ```bash
 LLM_PROVIDER=ollama
@@ -35,9 +35,7 @@ model on boot:
 docker compose --profile ollama up --build
 ```
 
-With `LLM_PROVIDER=ollama`, no request ever leaves your network — useful for
-regulated environments where ticket data (even after PII stripping) shouldn't
-touch a third-party API.
+With a locally configured Ollama server, LLM requests stay on your network. Connector requests and initial model/image downloads still use upstream services. The default allowlist permits the Compose Ollama service; custom hosts require explicit operator authorization. See [security boundaries](security-boundaries.md).
 
 ## Testing a provider before saving
 

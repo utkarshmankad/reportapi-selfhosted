@@ -4,12 +4,16 @@ x-app: &app
   environment: &environment
     DATABASE_URL: postgresql+asyncpg://reportapi:reportapi@postgres:5432/reportapi
     REDIS_URL: redis://redis:6379/0
+    APP_ENV: production
+    JIRA_ALLOWED_ORIGINS: http://upstream:8090
+    OLLAMA_ALLOWED_ORIGINS: http://upstream:8090
+    OUTBOUND_PRIVATE_ORIGINS: http://upstream:8090
     CONFIG_API_TOKEN: smoke-test-token
     CONFIG_STORE_PATH: /config/runtime.env
     JIRA_URL: http://upstream:8090
     JIRA_EMAIL: test@example.com
     JIRA_API_TOKEN: synthetic
-    LLM_PROVIDER: ollama
+    LLM_PROVIDER: openai
     OLLAMA_BASE_URL: http://upstream:8090
   volumes:
     - ci_config:/config

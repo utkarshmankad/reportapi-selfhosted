@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        hide_input_in_errors=True,
     )
 
     # App
@@ -41,6 +43,17 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
 
     config_store_path: str = "runtime-config.env"
+    config_read_only: bool = False
+    # Operator-controlled, comma-separated exact origins. Never editable through the API.
+    jira_allowed_origins: str = ""
+    ollama_allowed_origins: str = "http://ollama:11434"
+    outbound_private_origins: str = "http://ollama:11434"
+
+    @model_validator(mode="after")
+    def require_production_auth(self):
+        if self.app_env == "production" and not (self.config_api_token or "").strip():
+            raise ValueError("CONFIG_API_TOKEN is required in production")
+        return self
 
     # Accept legacy environment files; the unused Chroma service was removed.
     chroma_host: str = "chroma"
@@ -54,7 +67,7 @@ class Settings(BaseSettings):
     license_tier: Literal["community", "paid"] = "community"
     license_key: str | None = None
 
-    # Config UI auth — if set, /api/config/* requires this as X-Config-Token.
+    # Instance auth: all /api/* routes require X-Config-Token when configured.
     # Unset by default for local dev; set it whenever the api port is
     # reachable from anywhere other than your own machine.
     config_api_token: str | None = None
@@ -64,17 +77,17 @@ settings = Settings()
 
 
 def reload_runtime_settings():
-    """Apply shared UI overrides without changing infrastructure or auth settings."""
+    """Read one atomic override-file snapshot; never mutate startup settings."""
     from dotenv import dotenv_values
 
     from app.core.env_writer import ALLOWED_KEYS, ENV_PATH
 
-    if ENV_PATH.exists():
+    if not settings.config_read_only and ENV_PATH.exists():
         values = {
             key.lower(): value
-            for key, value in dotenv_values(ENV_PATH).items()
+            for key, value in dotenv_values(ENV_PATH, interpolate=False).items()
             if key in ALLOWED_KEYS and value is not None
         }
-        validated = Settings(_env_file=None, **(settings.model_dump() | values))
-        for key in values:
-            setattr(settings, key, getattr(validated, key))
+        return Settings(_env_file=None, **(settings.model_dump() | values))
+
+    return settings.model_copy(deep=True)

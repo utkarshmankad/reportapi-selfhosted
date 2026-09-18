@@ -8,7 +8,7 @@ to that milestone.
 
 import httpx
 
-from app.config import settings
+from app.config import Settings, settings
 from app.connectors.base import Connector
 from app.models.ticket import Ticket
 
@@ -28,13 +28,14 @@ PRIORITY_LABEL_PREFIXES = ("priority:", "priority/", "p0", "p1", "p2", "p3")
 
 
 class GitHubConnector(Connector):
-    def __init__(self):
-        if not settings.github_pat:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.github_pat:
             raise ValueError(
                 "GitHub credentials not configured. Set GITHUB_PAT in your environment."
             )
         self.headers = {
-            "Authorization": f"Bearer {settings.github_pat}",
+            "Authorization": f"Bearer {config.github_pat}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }

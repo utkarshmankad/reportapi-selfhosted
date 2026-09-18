@@ -1,8 +1,7 @@
 # ReportAPI Self-Hosted
 
 Container-native reporting engine for Agile ticket data. Runs entirely on
-your own infrastructure — no data leaves your network, and PII is stripped
-before any ticket content reaches an LLM.
+your own infrastructure. Cloud LLM providers receive filtered prompts; local Ollama keeps inference local. [Supported identifier filtering](security-boundaries.md#privacy-contract) is mandatory, but is not complete anonymization.
 
 ## Quickstart
 
@@ -10,7 +9,8 @@ before any ticket content reaches an LLM.
 git clone https://github.com/utkarshmankad/reportapi-selfhosted.git
 cd reportapi-selfhosted
 cp .env.example .env
-# fill in JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, OPENAI_API_KEY
+# fill in JIRA_URL, JIRA_ALLOWED_ORIGINS, JIRA_EMAIL, JIRA_API_TOKEN, OPENAI_API_KEY
+# for production: APP_ENV=production and a strong CONFIG_API_TOKEN
 docker compose up --build
 ```
 
@@ -32,7 +32,7 @@ curl -X POST http://localhost:8000/api/report/generate \
 - Scheduled reports via Celery beat
 - PDF / Markdown / text output with sandboxed custom templates
 - Browser-based config UI
-- Helm chart for Kubernetes deployments
+- Experimental Helm skeleton; Compose is the supported deployment path
 
 ## Next steps
 

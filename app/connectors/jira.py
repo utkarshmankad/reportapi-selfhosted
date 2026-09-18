@@ -1,9 +1,8 @@
 """Jira connector."""
 
-import httpx
-
-from app.config import settings
+from app.config import Settings, settings
 from app.connectors.base import Connector
+from app.core.ssrf_guard import safe_client
 from app.models.ticket import Ticket
 
 STATUS_MAP = {
@@ -15,17 +14,18 @@ STATUS_MAP = {
 
 
 class JiraConnector(Connector):
-    def __init__(self):
-        if not settings.jira_url or not settings.jira_email or not settings.jira_api_token:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.jira_url or not config.jira_email or not config.jira_api_token:
             raise ValueError(
                 "Jira credentials not configured. Set JIRA_URL, JIRA_EMAIL, "
                 "and JIRA_API_TOKEN in your environment."
             )
-        self.base_url = settings.jira_url.rstrip("/")
-        self.auth = (settings.jira_email, settings.jira_api_token)
+        self.base_url = config.jira_url.rstrip("/")
+        self.auth = (config.jira_email, config.jira_api_token)
 
     async def authenticate(self) -> bool:
-        async with httpx.AsyncClient(auth=self.auth, timeout=10.0) as client:
+        async with safe_client(self.base_url, "jira", auth=self.auth, timeout=10.0) as client:
             response = await client.get(f"{self.base_url}/rest/api/3/myself")
             return response.status_code == 200
 
@@ -40,7 +40,7 @@ class JiraConnector(Connector):
         else:
             raise ValueError("config must include either 'board_id' or 'sprint_id'")
 
-        async with httpx.AsyncClient(auth=self.auth, timeout=15.0) as client:
+        async with safe_client(self.base_url, "jira", auth=self.auth, timeout=15.0) as client:
             response = await client.get(
                 f"{self.base_url}/rest/api/3/search",
                 params={

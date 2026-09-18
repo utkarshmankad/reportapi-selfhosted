@@ -2,11 +2,11 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import reload_runtime_settings, settings
+from app.config import reload_runtime_settings
 from app.connectors.asana import AsanaConnector
 from app.connectors.github import GitHubConnector
 from app.connectors.jira import JiraConnector
-from app.core.pii import strip_pii_from_ticket
+from app.core.pii import sanitize_tickets, strip_pii
 from app.core.prompt_builder import build_prompt
 from app.db.models import Report
 from app.llm.factory import get_llm_provider
@@ -47,7 +47,7 @@ async def generate_report(
     Fetch tickets, strip PII, generate a narrative, persist the report.
     Returns (report, ticket_count). Raises ReportGenerationError on any failure.
     """
-    reload_runtime_settings()
+    config = reload_runtime_settings()
     connectors = {"jira": JiraConnector, "asana": AsanaConnector, "github": GitHubConnector}
     if connector not in connectors:
         raise ReportGenerationError(
@@ -58,39 +58,40 @@ async def generate_report(
         raise ReportGenerationError(422, "Either board_id or sprint_id is required")
 
     try:
-        source = connectors[connector]()
+        source = connectors[connector](config)
     except ValueError as e:
         raise ReportGenerationError(500, str(e))
 
     try:
         tickets = await source.fetch({"board_id": board_id, "sprint_id": sprint_id})
-    except Exception as e:
-        raise ReportGenerationError(502, f"{connector.capitalize()} fetch failed: {str(e)}")
+    except Exception:
+        raise ReportGenerationError(
+            502, f"{connector.capitalize()} fetch failed; check connection settings"
+        )
 
     if not tickets:
         raise ReportGenerationError(422, "No tickets found for the given filter")
 
     tickets = dedupe_tickets(tickets)
 
-    for ticket in tickets:
-        strip_pii_from_ticket(ticket)
+    sanitize_tickets(tickets)
 
-    system_prompt, user_content = build_prompt(tickets, settings.max_tokens_output)
+    system_prompt, user_content = build_prompt(tickets, config.max_tokens_output)
 
     try:
-        llm = get_llm_provider()
+        llm = get_llm_provider(config)
         narrative, tokens_used = await llm.generate(
             system_prompt=system_prompt,
-            user_content=user_content,
-            max_tokens=settings.max_tokens_output,
+            user_content=strip_pii(user_content),
+            max_tokens=config.max_tokens_output,
         )
-    except Exception as e:
-        raise ReportGenerationError(500, f"Report generation failed: {str(e)}")
+    except Exception:
+        raise ReportGenerationError(500, "Report generation failed; check provider settings")
 
     report = Report(
         connector=connector,
         status="complete",
-        model_used=settings.llm_provider,
+        model_used=config.llm_provider,
         tokens_used=tokens_used,
         narrative=narrative,
         output_format=output_format,

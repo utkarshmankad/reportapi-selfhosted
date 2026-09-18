@@ -185,16 +185,20 @@ export function Setup({ token }: { token: string }) {
           <span className="badge">Provider: {config.llm_provider}</span>
         </div>
       )}
-      <div className="cards">
-        {(["jira", "asana", "github", "llm"] as const).map((kind) => (
-          <ConnectionForm
-            key={kind}
-            kind={kind}
-            token={token}
-            onSaved={() => setVersion((v) => v + 1)}
-          />
-        ))}
-      </div>
+      {config?.config_read_only ? (
+        <Notice message="Connections are managed by your operator. Changes are disabled here." />
+      ) : (
+        <div className="cards">
+          {(["jira", "asana", "github", "llm"] as const).map((kind) => (
+            <ConnectionForm
+              key={kind}
+              kind={kind}
+              token={token}
+              onSaved={() => setVersion((v) => v + 1)}
+            />
+          ))}
+        </div>
+      )}
     </>
   );
 }

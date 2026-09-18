@@ -2,17 +2,18 @@
 
 import httpx
 
-from app.config import settings
+from app.config import Settings, settings
 from app.llm.base import LLMProvider
 
 
 class OpenAIProvider(LLMProvider):
     MODEL = "gpt-4o-mini"
 
-    def __init__(self):
-        if not settings.openai_api_key:
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        if not config.openai_api_key:
             raise ValueError("OPENAI_API_KEY is not set")
-        self.api_key = settings.openai_api_key
+        self.api_key = config.openai_api_key
 
     async def generate(
         self,

@@ -1,7 +1,8 @@
 # Template guide
 
-By default, `output_format: pdf` renders through a built-in template. You can
-upload your own to match your team's branding.
+Generate a narrative first, then request `/api/report/<id>/render?format=pdf`.
+The generation response remains JSON even when `output_format` is `pdf`. Upload
+a custom template to change the export layout.
 
 ## Uploading a template
 
@@ -14,7 +15,7 @@ curl -X POST http://localhost:8000/api/templates \
   }'
 ```
 
-The response includes a `template_id` — you don't reference it at generation
+The response includes an `id` — you don't reference it at generation
 time. Instead, request a specific rendering of an existing report:
 
 ```bash
@@ -54,3 +55,14 @@ upload time — you don't find out at render time in front of a stakeholder.
 | `text` | Raw narrative, no formatting |
 | `markdown` | Narrative wrapped in a `# Sprint Report` heading + metadata line |
 | `pdf` | Rendered through your template (or the default) via WeasyPrint |
+
+## Resource restrictions
+
+Parsing and rendering run in a bounded subprocess: 50 KB template, 1 MB context,
+2 MB HTML, 5 MB output, 15-second wall time, 10-second CPU time, and 768 MiB
+address space on Linux. At most two workers run per API process. File, network,
+and data-URL resources are denied, including CSS imports and linked fonts/images.
+Use inline styles. See [full limits and platform scope](security-boundaries.md#templatepdf-limits).
+
+When instance authentication is enabled, add `-H "X-Config-Token: $CONFIG_API_TOKEN"`
+to the examples above.

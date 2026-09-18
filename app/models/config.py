@@ -31,6 +31,7 @@ class TestResult(BaseModel):
 
 
 class ConfigStatus(BaseModel):
+    config_read_only: bool = False
     app_env: str
     llm_provider: str
     jira_configured: bool

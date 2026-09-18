@@ -23,5 +23,14 @@ wait_http() {
 }
 wait_http http://127.0.0.1:18000/health
 wait_http http://127.0.0.1:18080
+# Save credentials through HTTP, then recreate all consumers of the shared volume.
+curl --fail-with-body -sS http://127.0.0.1:18000/api/config/llm \
+  -H 'Content-Type: application/json' -H 'X-Config-Token: smoke-test-token' \
+  -d '{"llm_provider":"ollama","ollama_base_url":"http://upstream:8090"}'
+curl --fail-with-body -sS http://127.0.0.1:18000/api/config/github \
+  -H 'Content-Type: application/json' -H 'X-Config-Token: smoke-test-token' \
+  -d '{"github_pat":"synthetic-persisted-token"}'
+"${compose[@]}" up -d --force-recreate api worker beat
+wait_http http://127.0.0.1:18000/health
 "${compose[@]}" exec -T api python - < scripts/smoke_check.py
 SMOKE_UI_URL=http://127.0.0.1:18080 npm --prefix config-ui run test:e2e

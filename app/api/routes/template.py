@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.template_renderer import TemplateRenderError, validate_template
 from app.db.models import ReportTemplate
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/templates", tags=["templates"])
 @router.post("", response_model=TemplateResponse)
 async def upload_template(request: CreateTemplateRequest, db: AsyncSession = Depends(get_db)):
     try:
-        validate_template(request.content)
+        await run_in_threadpool(validate_template, request.content)
     except TemplateRenderError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -48,7 +49,7 @@ async def update_template(
 ):
     template = await get_template(template_id, db)
     try:
-        validate_template(request.content)
+        await run_in_threadpool(validate_template, request.content)
     except TemplateRenderError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     template.name = request.name

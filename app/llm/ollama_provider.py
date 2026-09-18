@@ -1,16 +1,16 @@
 """Ollama LLM provider — runs fully local, no internet traffic."""
 
-import httpx
-
-from app.config import settings
+from app.config import Settings, settings
+from app.core.ssrf_guard import safe_client
 from app.llm.base import LLMProvider
 
 
 class OllamaProvider(LLMProvider):
     MODEL = "llama3.2"
 
-    def __init__(self):
-        self.base_url = settings.ollama_base_url.rstrip("/")
+    def __init__(self, config: Settings | None = None):
+        config = config or settings
+        self.base_url = config.ollama_base_url.rstrip("/")
 
     async def generate(
         self,
@@ -18,7 +18,7 @@ class OllamaProvider(LLMProvider):
         user_content: str,
         max_tokens: int,
     ) -> tuple[str, int]:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with safe_client(self.base_url, "ollama", timeout=120.0) as client:
             response = await client.post(
                 f"{self.base_url}/api/chat",
                 json={
