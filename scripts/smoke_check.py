@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.db.models import Report, Schedule
 from app.db.session import AsyncSessionLocal, engine
-from app.worker.tasks import run_due_schedules
+from app.worker.tasks import dispatch_due_schedules
 
 
 def main():
@@ -49,7 +49,21 @@ def main():
 
     schedule_id = asyncio.run(seed_and_dispose(seed))
     # Round trip through a real worker; no eager mode or direct task call.
-    assert run_due_schedules.delay().get(timeout=90) >= 0
+    # dispatch_due_schedules only claims the occurrence and enqueues a
+    # separate execute_report_job task, so the actual generation happens
+    # asynchronously — poll for it to land instead of asserting immediately.
+    assert dispatch_due_schedules.delay().get(timeout=90) >= 1
+
+    async def poll_for_schedule_success():
+        async with AsyncSessionLocal() as db:
+            for _ in range(30):
+                schedule = await db.get(Schedule, schedule_id)
+                if schedule.last_run_at is not None:
+                    return
+                await asyncio.sleep(2)
+            raise AssertionError("Schedule did not complete a successful run within timeout")
+
+    asyncio.run(seed_and_dispose(poll_for_schedule_success))
 
     async def verify():
         async with AsyncSessionLocal() as db:

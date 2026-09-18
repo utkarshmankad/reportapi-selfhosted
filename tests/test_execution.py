@@ -203,8 +203,7 @@ async def test_generation_failures_do_not_commit(database, monkeypatch, case, st
     database.commit.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_scheduler_runs_due_and_skips_future(database, monkeypatch):
+def test_due_occurrences_includes_due_and_excludes_future():
     now = datetime.now(timezone.utc)
     due = Schedule(
         connector="jira",
@@ -213,29 +212,107 @@ async def test_scheduler_runs_due_and_skips_future(database, monkeypatch):
         created_at=now - timedelta(minutes=2),
     )
     future = Schedule(connector="jira", board_id="D", cron_expression="0 0 1 1 *", created_at=now)
-    database.execute = AsyncMock(return_value=MagicMock())
-    database.execute.return_value.scalars.return_value.all.return_value = [due, future]
-    session = MagicMock()
-    session.return_value.__aenter__ = AsyncMock(return_value=database)
-    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
-    generate = AsyncMock(side_effect=ReportGenerationError(502, "offline"))
-    monkeypatch.setattr(tasks, "generate_report", generate)
-    assert await tasks._run_due_schedules() == 1
-    generate.assert_awaited_once()
-    assert due.last_run_at is not None
-    assert future.last_run_at is None
+
+    assert len(tasks._due_occurrences(due, now, tasks.MAX_BACKFILL_OCCURRENCES)) >= 1
+    assert tasks._due_occurrences(future, now, tasks.MAX_BACKFILL_OCCURRENCES) == []
+
+
+def test_due_occurrences_bounded_by_max_count():
+    now = datetime.now(timezone.utc)
+    long_overdue = Schedule(
+        connector="jira",
+        board_id="D",
+        cron_expression="* * * * *",
+        created_at=now - timedelta(days=1),
+    )
+    occurrences = tasks._due_occurrences(long_overdue, now, 3)
+    assert len(occurrences) == 3
+    assert occurrences == sorted(occurrences)
 
 
 @pytest.mark.asyncio
-async def test_worker_always_disposes_loop_bound_pool(monkeypatch):
+async def test_dispatch_due_schedules_always_disposes_loop_bound_pool(monkeypatch):
     dispose = AsyncMock()
     monkeypatch.setattr(tasks, "engine", MagicMock(dispose=dispose))
     monkeypatch.setattr(
-        tasks, "_run_due_schedules", AsyncMock(side_effect=RuntimeError("database unavailable"))
+        tasks,
+        "_dispatch_due_schedules",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
     )
     with pytest.raises(RuntimeError):
-        await tasks._run_due_schedules_and_dispose()
+        await tasks._dispatch_due_schedules_and_dispose()
     dispose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_report_job_always_disposes_loop_bound_pool(monkeypatch):
+    dispose = AsyncMock()
+    monkeypatch.setattr(tasks, "engine", MagicMock(dispose=dispose))
+    monkeypatch.setattr(
+        tasks, "_execute_report_job", AsyncMock(side_effect=RuntimeError("database unavailable"))
+    )
+    with pytest.raises(RuntimeError):
+        await tasks._execute_report_job_and_dispose("job-id")
+    dispose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_recover_stuck_report_jobs_always_disposes_loop_bound_pool(monkeypatch):
+    dispose = AsyncMock()
+    monkeypatch.setattr(tasks, "engine", MagicMock(dispose=dispose))
+    monkeypatch.setattr(
+        tasks,
+        "_recover_stuck_report_jobs",
+        AsyncMock(side_effect=RuntimeError("database unavailable")),
+    )
+    with pytest.raises(RuntimeError):
+        await tasks._recover_stuck_report_jobs_and_dispose()
+    dispose.assert_awaited_once()
+
+
+def test_execute_report_job_task_reenqueues_on_retry(monkeypatch):
+    monkeypatch.setattr(tasks, "_execute_report_job_and_dispose", AsyncMock(return_value="queued"))
+    apply_async = MagicMock()
+    monkeypatch.setattr(tasks.execute_report_job, "apply_async", apply_async)
+
+    status = tasks.execute_report_job("job-id")
+
+    assert status == "queued"
+    apply_async.assert_called_once_with(args=["job-id"], countdown=tasks.RETRY_COUNTDOWN_SECONDS)
+
+
+def test_execute_report_job_task_does_not_reenqueue_on_terminal_status(monkeypatch):
+    monkeypatch.setattr(
+        tasks, "_execute_report_job_and_dispose", AsyncMock(return_value="succeeded")
+    )
+    apply_async = MagicMock()
+    monkeypatch.setattr(tasks.execute_report_job, "apply_async", apply_async)
+
+    status = tasks.execute_report_job("job-id")
+
+    assert status == "succeeded"
+    apply_async.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_recover_stuck_report_jobs_redispatches_queued(monkeypatch):
+    queued_job = MagicMock(status="queued", id="job-1")
+    failed_job = MagicMock(status="failed", id="job-2")
+    monkeypatch.setattr(
+        tasks, "recover_stuck_jobs", AsyncMock(return_value=[queued_job, failed_job])
+    )
+    delay = MagicMock()
+    monkeypatch.setattr(tasks.execute_report_job, "delay", delay)
+    db = MagicMock()
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+
+    count = await tasks._recover_stuck_report_jobs()
+
+    assert count == 2
+    delay.assert_called_once_with("job-1")
 
 
 @pytest.mark.parametrize("provider", ["openai", "anthropic", "groq", "ollama"])
@@ -410,3 +487,66 @@ async def test_persistence_failure_rolls_back_and_raises(database, monkeypatch):
         await generate_report(database, "jira", "D", None)
     assert error.value.status_code == 500
     database.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_report_job_returns_new_queued_job(database, monkeypatch):
+    from app.core.job_service import create_report_job
+
+    database.execute = AsyncMock(return_value=MagicMock())
+    database.execute.return_value.scalar_one_or_none = MagicMock(return_value=None)
+    job, created = await create_report_job(
+        database, connector="jira", board_id="PROJ", sprint_id=None
+    )
+    assert created is True
+    assert job.status == "queued"
+    database.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_report_job_idempotent_hit_skips_insert(database, monkeypatch):
+    from app.core.job_service import create_report_job
+    from app.db.models import ReportJob
+
+    existing = ReportJob(connector="jira", board_id="PROJ", idempotency_key="k1")
+    database.execute = AsyncMock(return_value=MagicMock())
+    database.execute.return_value.scalar_one_or_none = MagicMock(return_value=existing)
+
+    job, created = await create_report_job(
+        database, connector="jira", board_id="PROJ", sprint_id=None, idempotency_key="k1"
+    )
+    assert created is False
+    assert job is existing
+    database.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
+    now = datetime.now(timezone.utc)
+    due = Schedule(
+        id="s1",
+        connector="jira",
+        board_id="D",
+        cron_expression="* * * * *",
+        created_at=now - timedelta(minutes=2),
+        active=True,
+    )
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.execute.return_value.scalars.return_value.all.return_value = [due]
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+
+    fake_job = MagicMock(id="job-1")
+    monkeypatch.setattr(tasks, "claim_schedule_occurrences", AsyncMock(return_value=[fake_job]))
+    delay = MagicMock()
+    monkeypatch.setattr(tasks.execute_report_job, "delay", delay)
+
+    dispatched = await tasks._dispatch_due_schedules()
+
+    assert dispatched == 1
+    delay.assert_called_once_with("job-1")
+    assert due.last_attempted_at is not None
