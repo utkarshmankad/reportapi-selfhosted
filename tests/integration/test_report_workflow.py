@@ -8,6 +8,7 @@ import pytest
 from redis.asyncio import Redis
 
 from app.config import settings
+from app.connectors.base import FetchResult
 from app.main import app
 from app.models.ticket import Ticket
 
@@ -22,26 +23,28 @@ async def test_report_generation_persistence_export_and_cleanup(monkeypatch):
     monkeypatch.setattr(
         "app.connectors.github.GitHubConnector.fetch",
         AsyncMock(
-            return_value=[
-                Ticket(
-                    id="1",
-                    title="Release",
-                    description="",
-                    status="done",
-                    assignee=None,
-                    priority=None,
-                    labels=[],
-                    created_at=now,
-                    updated_at=now,
-                    url="https://example.com",
-                    sprint=None,
-                )
-            ]
+            return_value=FetchResult(
+                tickets=[
+                    Ticket(
+                        id="1",
+                        title="Release",
+                        description="",
+                        status="done",
+                        assignee=None,
+                        priority=None,
+                        labels=[],
+                        created_at=now,
+                        updated_at=now,
+                        url="https://example.com",
+                        sprint=None,
+                    )
+                ]
+            )
         ),
     )
     monkeypatch.setattr(
         "app.llm.openai_provider.OpenAIProvider.generate",
-        AsyncMock(return_value=("Release complete.", 12)),
+        AsyncMock(return_value=("Release complete.", 12, False)),
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app), base_url="http://test"
