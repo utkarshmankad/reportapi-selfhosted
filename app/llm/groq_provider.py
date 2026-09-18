@@ -37,7 +37,9 @@ class GroqProvider(LLMProvider):
             response.raise_for_status()
             data = response.json()
 
-        text = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        text = choice["message"]["content"]
         tokens_used = data["usage"]["total_tokens"]
+        truncated = choice.get("finish_reason") == "length"
 
-        return text, tokens_used
+        return text, tokens_used, truncated

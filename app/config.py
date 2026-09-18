@@ -61,6 +61,10 @@ class Settings(BaseSettings):
 
     # Report defaults
     max_tokens_output: int = 800
+    # Approximate input budget (tokens) for the ticket listing sent to the
+    # LLM. Deliberately conservative and provider-agnostic — see
+    # prompt_builder.estimate_tokens for the approximation used.
+    max_tokens_input: int = 12000
     report_retention_days: int = 7
 
     # Licensing — Community tier needs no key; paid tiers check license_key

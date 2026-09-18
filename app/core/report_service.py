@@ -84,11 +84,13 @@ async def generate_report(
 
     sanitize_tickets(tickets)
 
-    system_prompt, user_content = build_prompt(tickets, config.max_tokens_output)
+    system_prompt, user_content, excluded_ticket_count = build_prompt(
+        tickets, config.max_tokens_output, config.max_tokens_input
+    )
 
     try:
         llm = get_llm_provider(config)
-        narrative, tokens_used = await llm.generate(
+        narrative, tokens_used, provider_truncated = await llm.generate(
             system_prompt=system_prompt,
             user_content=strip_pii(user_content),
             max_tokens=config.max_tokens_output,
@@ -96,15 +98,28 @@ async def generate_report(
     except Exception:
         raise ReportGenerationError(500, "Report generation failed; check provider settings")
 
+    if not narrative or not narrative.strip():
+        raise ReportGenerationError(502, "Provider returned an empty report; try again")
+
+    is_truncated = fetch_result.truncated or excluded_ticket_count > 0 or provider_truncated
+    reasons = []
+    if fetch_result.truncation_reason:
+        reasons.append(fetch_result.truncation_reason)
+    if excluded_ticket_count:
+        reasons.append(f"{excluded_ticket_count} ticket(s) omitted from the LLM input size budget")
+    if provider_truncated:
+        reasons.append("Provider cut the narrative off at its output token limit")
+    truncation_reason = "; ".join(reasons) or None
+
     report = Report(
         connector=connector,
-        status="partial" if fetch_result.truncated else "complete",
+        status="partial" if is_truncated else "complete",
         model_used=config.llm_provider,
         tokens_used=tokens_used,
         narrative=narrative,
         output_format=output_format,
-        is_truncated=fetch_result.truncated,
-        truncation_reason=fetch_result.truncation_reason,
+        is_truncated=is_truncated,
+        truncation_reason=truncation_reason,
     )
     db.add(report)
     await db.commit()

@@ -121,7 +121,34 @@ def _xref_groups(tickets: list[Ticket]) -> dict[str, list[Ticket]]:
     return {k: v for k, v in groups.items() if len(v) > 1}
 
 
-def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
+# Rough, provider-agnostic token estimate (~4 characters/token). This is
+# deliberately conservative rather than exact — an approximation is enough
+# to decide whether the ticket listing needs trimming to fit the configured
+# input budget; it is not used for billing or provider-reported usage.
+_CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str) -> int:
+    return max(1, len(text) // _CHARS_PER_TOKEN)
+
+
+def _ticket_rank_key(t: Ticket, risk_by_id: dict[str, tuple[str, str]]) -> tuple[int, str]:
+    """Deterministic priority for which tickets survive an input-budget cut.
+
+    Lower sorts first (kept first): blocked tickets, then anything flagged
+    as a risk, then everything else — tied within a tier by ticket id so
+    the same input always produces the same trimmed set.
+    """
+    if t.status == "blocked":
+        tier = 0
+    elif t.id in risk_by_id:
+        tier = 1
+    else:
+        tier = 2
+    return (tier, t.id)
+
+
+def build_prompt(tickets: list[Ticket], max_tokens: int, max_input_tokens: int) -> tuple[str, str]:
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(max_tokens=max_tokens)
 
     status_counts: dict[str, int] = defaultdict(int)
@@ -133,11 +160,13 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
     lines = [f"Total tickets: {len(tickets)} ({counts_line})", ""]
 
     risk_by_id: dict[str, tuple[str, str]] = {}
+    ticket_lines: dict[str, str] = {}
+    stale_by_id: dict[str, int] = {}
 
-    lines.append("Tickets:")
     for t in tickets:
         stale_days = _days_since(t.updated_at)
         is_stale = stale_days >= STALE_DAYS_THRESHOLD and t.status in ("in_progress", "blocked")
+        stale_by_id[t.id] = stale_days
 
         line = f"- [{t.status.upper()}] {t.title}"
         if t.assignee:
@@ -150,11 +179,43 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
 
         tier_reason = _risk_tier_and_reason(t, is_stale, stale_days)
         if tier_reason:
-            tier, reason = tier_reason
             risk_by_id[t.id] = tier_reason
-            line += f" | RISK: {tier} ({reason})"
+            line += f" | RISK: {tier_reason[0]} ({tier_reason[1]})"
 
-        lines.append(line)
+        ticket_lines[t.id] = line
+
+    # Reserve a fixed slice of the input budget for everything other than
+    # the per-ticket listing (headers, assignee/blocked/risk sections), then
+    # deterministically keep as many tickets as fit — blocked and risk
+    # tickets first — rather than truncating mid-listing or silently
+    # dropping arbitrary tickets.
+    reserved_tokens = estimate_tokens("\n".join(lines)) + 500
+    budget = max(0, max_input_tokens - reserved_tokens)
+
+    ranked = sorted(tickets, key=lambda t: _ticket_rank_key(t, risk_by_id))
+    included_ids: set[str] = set()
+    used_tokens = 0
+    for t in ranked:
+        cost = estimate_tokens(ticket_lines[t.id]) + 1
+        if used_tokens + cost > budget and included_ids:
+            break
+        used_tokens += cost
+        included_ids.add(t.id)
+        if used_tokens >= budget:
+            break
+
+    excluded_count = len(tickets) - len(included_ids)
+
+    lines.append("Tickets:")
+    for t in tickets:
+        if t.id in included_ids:
+            lines.append(ticket_lines[t.id])
+    if excluded_count:
+        lines.append(
+            f"- ... {excluded_count} additional ticket(s) omitted from this listing to stay "
+            "within the input size budget (still counted in the totals above; lowest-priority "
+            "and non-risk tickets omitted first)."
+        )
 
     lines.append("")
     assignee_map: dict[str, list[Ticket]] = defaultdict(list)
@@ -218,4 +279,4 @@ def build_prompt(tickets: list[Ticket], max_tokens: int) -> tuple[str, str]:
 
     user_content = "\n".join(lines)
 
-    return system_prompt, user_content
+    return system_prompt, user_content, excluded_count

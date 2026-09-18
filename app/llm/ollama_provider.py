@@ -36,5 +36,6 @@ class OllamaProvider(LLMProvider):
 
         text = data["message"]["content"]
         tokens_used = data.get("prompt_eval_count", 0) + data.get("eval_count", 0)
+        truncated = data.get("done_reason") == "length"
 
-        return text, tokens_used
+        return text, tokens_used, truncated

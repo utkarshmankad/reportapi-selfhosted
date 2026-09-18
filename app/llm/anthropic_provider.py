@@ -43,5 +43,6 @@ class AnthropicProvider(LLMProvider):
 
         text = data["content"][0]["text"]
         tokens_used = data["usage"]["input_tokens"] + data["usage"]["output_tokens"]
+        truncated = data.get("stop_reason") == "max_tokens"
 
-        return text, tokens_used
+        return text, tokens_used, truncated

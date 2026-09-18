@@ -40,14 +40,107 @@ async def test_generation_scrubs_before_provider_and_persists(database, monkeypa
         return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket, ticket])))
     )
     monkeypatch.setattr("app.core.report_service.JiraConnector", source)
-    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15)))
+    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15, False)))
     monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
     report, count = await generate_report(database, "jira", "DEMO", None)
     assert count == 1
     assert "test@example.com" not in llm.generate.call_args.kwargs["user_content"]
     assert report.narrative == "A report"
+    assert report.is_truncated is False
     database.commit.assert_awaited_once()
     database.add.assert_called_once_with(report)
+
+
+@pytest.mark.asyncio
+async def test_empty_provider_response_raises(database, monkeypatch):
+    now = datetime.now(timezone.utc)
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=now,
+        updated_at=now,
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    llm = MagicMock(generate=AsyncMock(return_value=("   ", 5, False)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+
+    with pytest.raises(ReportGenerationError) as error:
+        await generate_report(database, "jira", "D", None)
+    assert error.value.status_code == 502
+    database.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_provider_truncation_marks_report_partial(database, monkeypatch):
+    now = datetime.now(timezone.utc)
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=now,
+        updated_at=now,
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    llm = MagicMock(generate=AsyncMock(return_value=("Cut off mid-", 5, True)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+
+    report, _ = await generate_report(database, "jira", "D", None)
+    assert report.status == "partial"
+    assert report.is_truncated is True
+    assert "output token limit" in report.truncation_reason
+
+
+@pytest.mark.asyncio
+async def test_input_budget_exclusion_marks_report_partial(database, monkeypatch):
+    now = datetime.now(timezone.utc)
+    tickets = [
+        Ticket(
+            id=str(i),
+            title=f"Task {i}",
+            description="",
+            status="todo",
+            assignee=None,
+            priority=None,
+            labels=[],
+            created_at=now,
+            updated_at=now,
+            url="https://example.com",
+            sprint=None,
+        )
+        for i in range(50)
+    ]
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=tickets)))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    monkeypatch.setattr("app.config.settings.max_tokens_input", 300)
+    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15, False)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+
+    report, count = await generate_report(database, "jira", "D", None)
+    assert count == 50
+    assert report.status == "partial"
+    assert report.is_truncated is True
+    assert "input size budget" in report.truncation_reason
 
 
 @pytest.mark.asyncio
