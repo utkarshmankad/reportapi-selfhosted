@@ -61,6 +61,11 @@ count): report it as its own risk-level line, not folded into the assignee \
 paragraph — e.g. "N of M tickets (X%) have no assignee." A large unowned \
 share is itself a risk to call out, not a footnote.
 - No closing summary paragraph. End after the risk section.
+- The input states a reporting period. State it once, in your own words, \
+alongside the opening count line. Never claim a ticket was in a given state \
+"throughout" or "during" the period, or reconstruct a history of status \
+changes — the input is current/updated-in-range state only, not a \
+timeline of events.
 - Maximum length: {{max_tokens}} tokens.
 """.format(
     stale_days=STALE_DAYS_THRESHOLD,
@@ -148,7 +153,13 @@ def _ticket_rank_key(t: Ticket, risk_by_id: dict[str, tuple[str, str]]) -> tuple
     return (tier, t.id)
 
 
-def build_prompt(tickets: list[Ticket], max_tokens: int, max_input_tokens: int) -> tuple[str, str]:
+def build_prompt(
+    tickets: list[Ticket],
+    max_tokens: int,
+    max_input_tokens: int,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+) -> tuple[str, str, int]:
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(max_tokens=max_tokens)
 
     status_counts: dict[str, int] = defaultdict(int)
@@ -157,7 +168,19 @@ def build_prompt(tickets: list[Ticket], max_tokens: int, max_input_tokens: int) 
 
     counts_line = ", ".join(f"{status}: {count}" for status, count in sorted(status_counts.items()))
 
-    lines = [f"Total tickets: {len(tickets)} ({counts_line})", ""]
+    lines = [f"Total tickets: {len(tickets)} ({counts_line})"]
+    if period_start or period_end:
+        lines.append(
+            f"Reporting period: tickets updated from {period_start or 'the beginning'} to "
+            f"{period_end or 'now'}. This reflects activity in that window only — it is not a "
+            "claim about ticket state at any specific point in time within it."
+        )
+    else:
+        lines.append(
+            "Reporting period: unbounded — this is a snapshot of current ticket state as of "
+            "when the report was generated, not a historical reconstruction."
+        )
+    lines.append("")
 
     risk_by_id: dict[str, tuple[str, str]] = {}
     ticket_lines: dict[str, str] = {}

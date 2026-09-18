@@ -36,6 +36,8 @@ async def generate_report_route(
             sprint_id=request.sprint_id,
             output_format=request.output_format,
             assigned_means_in_progress=request.assigned_means_in_progress,
+            period_start=request.period_start,
+            period_end=request.period_end,
         )
     except ReportGenerationError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
@@ -50,6 +52,9 @@ async def generate_report_route(
         output_format=report.output_format,
         is_truncated=report.is_truncated,
         truncation_reason=report.truncation_reason,
+        period_start=report.period_start,
+        period_end=report.period_end,
+        period_semantics=report.period_semantics,
     )
 
 

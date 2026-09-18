@@ -25,6 +25,14 @@ class Report(Base):
     error_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     truncation_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Fixed for now: describes how period_start/period_end were interpreted
+    # when this report was generated ("tickets updated in range" vs. an
+    # unbounded fetch snapshot when no period was given). Stored per-report
+    # rather than assumed, since the semantics could change in a later
+    # release and old reports must keep meaning what they said at the time.
+    period_semantics: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -38,6 +46,8 @@ class Schedule(Base):
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
     assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

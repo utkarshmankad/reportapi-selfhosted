@@ -1,5 +1,7 @@
 """Core report generation logic — shared by the API route and the Celery beat scheduler."""
 
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import reload_runtime_settings
@@ -36,6 +38,31 @@ def dedupe_tickets(tickets: list[Ticket]) -> list[Ticket]:
     return list(deduped.values())
 
 
+def _as_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def filter_by_period(
+    tickets: list[Ticket], period_start: datetime | None, period_end: datetime | None
+) -> list[Ticket]:
+    """
+    The reporting period is defined as "tickets updated within
+    [period_start, period_end]" — an activity window, not a claim about
+    historical ticket state at any point in that window (the source APIs
+    only expose current state, not point-in-time snapshots).
+    """
+    if period_start is None and period_end is None:
+        return tickets
+    start = _as_utc(period_start) if period_start else None
+    end = _as_utc(period_end) if period_end else None
+    return [
+        t
+        for t in tickets
+        if (start is None or _as_utc(t.updated_at) >= start)
+        and (end is None or _as_utc(t.updated_at) <= end)
+    ]
+
+
 async def generate_report(
     db: AsyncSession,
     connector: str,
@@ -43,6 +70,8 @@ async def generate_report(
     sprint_id: str | None,
     output_format: str = "text",
     assigned_means_in_progress: bool = True,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
 ) -> tuple[Report, int]:
     """
     Fetch tickets, strip PII, generate a narrative, persist the report.
@@ -81,11 +110,18 @@ async def generate_report(
         raise ReportGenerationError(422, "No tickets found for the given filter")
 
     tickets = dedupe_tickets(tickets)
+    tickets = filter_by_period(tickets, period_start, period_end)
+    if not tickets:
+        raise ReportGenerationError(422, "No tickets updated within the given period")
+
+    period_semantics = (
+        "tickets_updated_in_range" if (period_start or period_end) else "unbounded_fetch_snapshot"
+    )
 
     sanitize_tickets(tickets)
 
     system_prompt, user_content, excluded_ticket_count = build_prompt(
-        tickets, config.max_tokens_output, config.max_tokens_input
+        tickets, config.max_tokens_output, config.max_tokens_input, period_start, period_end
     )
 
     try:
@@ -120,6 +156,9 @@ async def generate_report(
         output_format=output_format,
         is_truncated=is_truncated,
         truncation_reason=truncation_reason,
+        period_start=period_start,
+        period_end=period_end,
+        period_semantics=period_semantics,
     )
     db.add(report)
     await db.commit()

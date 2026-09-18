@@ -299,3 +299,20 @@ def test_input_budget_never_excludes_when_all_tickets_fit_generous_budget():
     tickets = [_ticket(id=str(i), status="in_progress") for i in range(3)]
     _, user_content, excluded_count = build_prompt(tickets, 800, 1_000_000)
     assert excluded_count == 0
+
+
+def test_unbounded_period_notes_snapshot():
+    tickets = [_ticket()]
+    _, user_content, _ = build_prompt(tickets, 800, 12000)
+    assert "unbounded" in user_content.lower()
+    assert "snapshot" in user_content.lower()
+
+
+def test_bounded_period_states_range_and_disclaimer():
+    tickets = [_ticket()]
+    start = NOW - timedelta(days=30)
+    end = NOW
+    _, user_content, _ = build_prompt(tickets, 800, 12000, start, end)
+    assert str(start) in user_content
+    assert str(end) in user_content
+    assert "not a claim about ticket state at any specific point" in user_content

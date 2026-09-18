@@ -245,3 +245,137 @@ def test_factory_selects_provider(monkeypatch, provider):
     for field in ("openai_api_key", "anthropic_api_key", "groq_api_key"):
         monkeypatch.setattr(settings, field, "test")
     assert get_llm_provider().__class__.__name__.lower().startswith(provider)
+
+
+@pytest.mark.asyncio
+async def test_period_filter_excludes_tickets_outside_range(database, monkeypatch):
+    from app.core.report_service import filter_by_period
+
+    old = Ticket(
+        id="1",
+        title="old",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        url="https://example.com",
+        sprint=None,
+    )
+    recent = Ticket(
+        id="2",
+        title="recent",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        url="https://example.com",
+        sprint=None,
+    )
+
+    result = filter_by_period(
+        [old, recent],
+        datetime(2026, 5, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+    )
+    assert [t.id for t in result] == ["2"]
+
+    assert filter_by_period([old, recent], None, None) == [old, recent]
+
+
+@pytest.mark.asyncio
+async def test_generate_report_rejects_period_with_no_matching_tickets(database, monkeypatch):
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+
+    with pytest.raises(ReportGenerationError) as error:
+        await generate_report(
+            database,
+            "jira",
+            "D",
+            None,
+            period_start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            period_end=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+    assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_generate_report_persists_period_and_semantics(database, monkeypatch):
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15, False)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    report, count = await generate_report(
+        database, "jira", "D", None, period_start=start, period_end=end
+    )
+    assert count == 1
+    assert report.period_start == start
+    assert report.period_end == end
+    assert report.period_semantics == "tickets_updated_in_range"
+
+
+@pytest.mark.asyncio
+async def test_generate_report_no_period_uses_unbounded_semantics(database, monkeypatch):
+    ticket = Ticket(
+        id="1",
+        title="t",
+        description="",
+        status="todo",
+        assignee=None,
+        priority=None,
+        labels=[],
+        created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        url="https://example.com",
+        sprint=None,
+    )
+    source = MagicMock(
+        return_value=MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket])))
+    )
+    monkeypatch.setattr("app.core.report_service.JiraConnector", source)
+    llm = MagicMock(generate=AsyncMock(return_value=("A report", 15, False)))
+    monkeypatch.setattr("app.core.report_service.get_llm_provider", lambda config: llm)
+
+    report, _ = await generate_report(database, "jira", "D", None)
+    assert report.period_start is None
+    assert report.period_end is None
+    assert report.period_semantics == "unbounded_fetch_snapshot"

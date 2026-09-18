@@ -84,3 +84,27 @@ async def test_github_connector_rejects_injection_before_request(monkeypatch):
     connector.headers = {}
     with pytest.raises(ValueError):
         await connector.fetch({"board_id": "acme/widgets/../../user"})
+
+
+def test_period_start_after_period_end_rejected():
+    from datetime import datetime, timezone
+
+    with pytest.raises(ValueError):
+        GenerateReportRequest(
+            connector="jira",
+            board_id="PROJ",
+            period_start=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            period_end=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_period_start_before_period_end_accepted():
+    from datetime import datetime, timezone
+
+    request = GenerateReportRequest(
+        connector="jira",
+        board_id="PROJ",
+        period_start=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        period_end=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    assert request.period_start is not None

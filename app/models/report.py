@@ -57,12 +57,20 @@ class GenerateReportRequest(BaseModel):
     # unlabeled open issue as in_progress is a judgment call the caller
     # should be able to opt out of, not implicit connector behavior.
     assigned_means_in_progress: bool = True
+    # Reporting period, defined (for now) as "tickets updated within
+    # [period_start, period_end]". Both optional; when omitted the report
+    # reflects an unbounded fetch snapshot instead — never implicitly
+    # narrowed, since that would silently misrepresent what was reported on.
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
     @model_validator(mode="after")
     def validate_scope(self):
         self.board_id = (self.board_id or "").strip() or None
         self.sprint_id = (self.sprint_id or "").strip() or None
         validate_connector_scope(self.connector, self.board_id, self.sprint_id)
+        if self.period_start and self.period_end and self.period_start > self.period_end:
+            raise ValueError("period_start must not be after period_end")
         return self
 
 
@@ -77,6 +85,9 @@ class ReportResponse(BaseModel):
     output_format: str
     is_truncated: bool
     truncation_reason: str | None
+    period_start: datetime | None
+    period_end: datetime | None
+    period_semantics: str | None
     created_at: datetime
 
 
@@ -90,3 +101,6 @@ class GenerateReportResponse(BaseModel):
     output_format: str
     is_truncated: bool
     truncation_reason: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    period_semantics: str | None = None

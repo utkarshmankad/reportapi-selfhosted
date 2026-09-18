@@ -38,6 +38,8 @@ class ScheduleResponse(BaseModel):
     cron_expression: str
     output_format: str
     assigned_means_in_progress: bool
+    period_start: datetime | None
+    period_end: datetime | None
     active: bool
     last_run_at: datetime | None
     created_at: datetime
