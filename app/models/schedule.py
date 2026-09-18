@@ -42,4 +42,5 @@ class ScheduleResponse(BaseModel):
     period_end: datetime | None
     active: bool
     last_run_at: datetime | None
+    last_attempted_at: datetime | None
     created_at: datetime
