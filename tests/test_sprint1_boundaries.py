@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings, settings
+from app.connectors.base import FetchResult
 from app.core import render_process
 from app.core.render_process import TemplateRenderError
 from app.core.report_service import generate_report
@@ -56,7 +57,7 @@ async def test_all_provider_request_bodies_are_sanitized(monkeypatch, respx_mock
     )
     monkeypatch.setattr(
         "app.core.report_service.JiraConnector",
-        lambda config: MagicMock(fetch=AsyncMock(return_value=[ticket])),
+        lambda config: MagicMock(fetch=AsyncMock(return_value=FetchResult(tickets=[ticket]))),
     )
     response = {
         "choices": [{"message": {"content": "Safe report"}}],
@@ -159,7 +160,7 @@ async def test_job_keeps_provider_snapshot_during_config_change(monkeypatch, res
     async def fetch(config):
         settings.llm_provider = "groq"
         settings.openai_api_key = "changed-key"
-        return [ticket]
+        return FetchResult(tickets=[ticket])
 
     monkeypatch.setattr(
         "app.core.report_service.JiraConnector", lambda config: MagicMock(fetch=fetch)

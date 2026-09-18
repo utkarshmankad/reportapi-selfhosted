@@ -44,7 +44,8 @@ async def test_fetch_normalises_issues_and_skips_prs(mock_github_issues_response
     )
 
     connector = GitHubConnector()
-    tickets = await connector.fetch({"board_id": "acme/widgets"})
+    result = await connector.fetch({"board_id": "acme/widgets"})
+    tickets = result.tickets
 
     assert len(tickets) == 1
     assert tickets[0].id == "42"
@@ -82,7 +83,8 @@ async def test_closed_issue_maps_to_done(monkeypatch):
     )
 
     connector = GitHubConnector()
-    tickets = await connector.fetch({"board_id": "acme/widgets"})
+    result = await connector.fetch({"board_id": "acme/widgets"})
+    tickets = result.tickets
 
     assert tickets[0].status == "done"
     assert tickets[0].sprint is None
@@ -115,7 +117,8 @@ async def test_status_label_hint_overrides_open_state(monkeypatch):
     )
 
     connector = GitHubConnector()
-    tickets = await connector.fetch({"board_id": "acme/widgets"})
+    result = await connector.fetch({"board_id": "acme/widgets"})
+    tickets = result.tickets
 
     assert tickets[0].status == "in_progress"
 
@@ -146,7 +149,8 @@ async def test_unassigned_open_issue_maps_to_todo(monkeypatch):
     )
 
     connector = GitHubConnector()
-    tickets = await connector.fetch({"board_id": "acme/widgets"})
+    result = await connector.fetch({"board_id": "acme/widgets"})
+    tickets = result.tickets
 
     assert tickets[0].status == "todo"
 

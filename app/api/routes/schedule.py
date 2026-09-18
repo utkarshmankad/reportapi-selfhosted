@@ -28,6 +28,9 @@ async def create_schedule(request: CreateScheduleRequest, db: AsyncSession = Dep
         sprint_id=request.sprint_id,
         cron_expression=request.cron_expression,
         output_format=request.output_format,
+        assigned_means_in_progress=request.assigned_means_in_progress,
+        period_start=request.period_start,
+        period_end=request.period_end,
         active=request.active,
     )
     db.add(schedule)
