@@ -75,6 +75,7 @@ export function Reports({ token }: { token: string }) {
       const created = await request<Job>("/report/jobs", token, "POST", {
         ...scope,
         output_format: format,
+        template_id: format === "pdf" && template ? template : undefined,
         idempotency_key: idempotencyKey,
       });
       setJob(created);
@@ -84,9 +85,7 @@ export function Reports({ token }: { token: string }) {
           finished.error_reason || "Report generation failed. Try again.",
         );
       }
-      setSelected(
-        await request<Report>(`/report/${finished.report_id}`, token),
-      );
+      openReport(await request<Report>(`/report/${finished.report_id}`, token));
       setOffset(0);
       setVersion((v) => v + 1);
     } catch (e) {
@@ -95,6 +94,10 @@ export function Reports({ token }: { token: string }) {
       setBusy(false);
       setJob(null);
     }
+  }
+  function openReport(row: Report) {
+    setSelected(row);
+    setTemplate(row.template_id || "");
   }
   async function remove(id: string) {
     if (!window.confirm("Delete this report permanently?")) return;
@@ -130,6 +133,28 @@ export function Reports({ token }: { token: string }) {
           <fieldset disabled={busy}>
             <ScopeFields value={scope} onChange={setScope} />
             <FormatField value={format} onChange={setFormat} />
+            {format === "pdf" && (
+              <label>
+                PDF template
+                <select
+                  value={template}
+                  onChange={(e) => setTemplate(e.target.value)}
+                >
+                  <option value="">Default template</option>
+                  {templates
+                    .filter((t) => !t.archived)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+                <small>
+                  Selected once, here — the report always renders with this
+                  exact template version, even if it's edited later.
+                </small>
+              </label>
+            )}
             <button type="submit">
               {busy ? "Working…" : "Generate report"}
             </button>
@@ -225,7 +250,7 @@ export function Reports({ token }: { token: string }) {
                       <div className="actions">
                         <button
                           className="secondary"
-                          onClick={() => setSelected(row)}
+                          onClick={() => openReport(row)}
                         >
                           View report
                         </button>

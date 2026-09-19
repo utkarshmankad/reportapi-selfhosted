@@ -12,8 +12,11 @@ export interface Report {
   narrative: string | null;
   model_used: string;
   tokens_used: number;
+  ticket_count?: number;
   created_at: string;
   output_format: string;
+  template_id?: string | null;
+  template_version?: number | null;
 }
 export interface Schedule extends Scope {
   id: string;
@@ -45,6 +48,8 @@ export interface Template {
   id: string;
   name: string;
   content: string;
+  version: number;
+  archived: boolean;
 }
 export interface Config {
   config_read_only: boolean;

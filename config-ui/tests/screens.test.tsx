@@ -45,6 +45,8 @@ const template: Template = {
   id: "t1",
   name: "Client update",
   content: "<h1>Update</h1>",
+  version: 1,
+  archived: false,
 };
 let reports: Report[],
   schedules: Schedule[],
@@ -93,9 +95,18 @@ beforeEach(() => {
         method === "DELETE" ? [] : [{ ...schedule, ...(body as object) }];
       return schedules[0];
     }
-    if (path === "/templates") {
+    if (path.startsWith("/templates") && !path.includes("/templates/")) {
       if (method === "POST") templates = [{ ...template, ...(body as object) }];
       return templates;
+    }
+    if (path.endsWith("/preview")) return { html: "<h1>Preview</h1>" };
+    if (path.endsWith("/archive")) {
+      templates = [{ ...templates[0], archived: true }];
+      return templates[0];
+    }
+    if (path.endsWith("/restore")) {
+      templates = [{ ...templates[0], archived: false }];
+      return templates[0];
     }
     if (path.startsWith("/templates/")) {
       templates =
@@ -384,6 +395,28 @@ it("creates, edits and deletes templates", async () => {
   );
   await user.click(screen.getByRole("button", { name: "Delete template" }));
   expect(await screen.findByText(/No custom templates/)).toBeVisible();
+});
+it("previews, archives and restores a template", async () => {
+  const user = userEvent.setup();
+  render(<Templates token="t" />);
+  await screen.findByRole("heading", { name: "Client update" });
+  await user.click(screen.getByRole("button", { name: "Preview" }));
+  const previewPanel = within(
+    screen.getByRole("region", { name: "Template preview" }),
+  );
+  expect(previewPanel.getByTitle(/Preview of/)).toBeInTheDocument();
+  await user.click(previewPanel.getByRole("button", { name: "Close preview" }));
+  expect(
+    screen.queryByRole("region", { name: "Template preview" }),
+  ).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Archive" }));
+  expect(await screen.findByText(/Archived/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Restore" }));
+  await waitFor(() =>
+    expect(screen.queryByText(/Archived/)).not.toBeInTheDocument(),
+  );
+  await user.click(screen.getByLabelText("Show archived"));
 });
 it("handles template errors and cancelled deletion", async () => {
   const user = userEvent.setup();
