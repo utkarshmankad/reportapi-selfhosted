@@ -551,3 +551,35 @@ async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
     assert dispatched == 1
     delay.assert_called_once_with("job-1")
     assert due.last_attempted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_webhook_deliveries_dispatches_ready_rows(monkeypatch):
+    from app.db.models import WebhookDelivery
+
+    ready = WebhookDelivery(id="d1", status="pending", payload="{}")
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.execute.return_value.scalars.return_value.all.return_value = [ready]
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+    delay = MagicMock()
+    monkeypatch.setattr(tasks.deliver_webhook, "delay", delay)
+
+    count = await tasks._dispatch_pending_webhook_deliveries()
+
+    assert count == 1
+    delay.assert_called_once_with("d1")
+
+
+def test_deliver_webhook_task_does_not_self_requeue(monkeypatch):
+    monkeypatch.setattr(tasks, "_deliver_webhook_and_dispose", AsyncMock(return_value="pending"))
+    apply_async = MagicMock()
+    monkeypatch.setattr(tasks.deliver_webhook, "apply_async", apply_async)
+
+    status = tasks.deliver_webhook("d1")
+
+    assert status == "pending"
+    apply_async.assert_not_called()

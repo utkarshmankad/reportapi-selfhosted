@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging_config import get_logger
 from app.core.report_service import ReportGenerationError, generate_report
+from app.core.webhook_service import enqueue_deliveries_for_report
 from app.db.models import (
     JOB_STATUS_FAILED,
     JOB_STATUS_QUEUED,
@@ -233,6 +234,15 @@ async def run_job(db: AsyncSession, job: ReportJob) -> ReportJob:
             schedule.last_run_at = job.finished_at
             schedule.last_attempted_at = job.scheduled_for
             db.add(schedule)
+
+    # Outbox insert in the same transaction as the success — a delivery
+    # row only exists if the report/job state it's notifying about was
+    # actually committed, and vice versa: nothing is silently skipped. A
+    # periodic sweep (app.worker.tasks.dispatch_pending_webhook_deliveries)
+    # picks up pending rows rather than dispatching inline here, so a
+    # worker crash between this commit and dispatch still leaves the
+    # delivery discoverable.
+    await enqueue_deliveries_for_report(db, report)
 
     await db.commit()
     await db.refresh(job)

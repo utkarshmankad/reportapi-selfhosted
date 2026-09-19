@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Operator-controlled, comma-separated exact origins. Never editable through the API.
     jira_allowed_origins: str = ""
     ollama_allowed_origins: str = "http://ollama:11434"
+    # Webhook destinations are end-user-configured URLs, so — like Jira and
+    # Ollama — they're still subject to an operator-controlled allowlist:
+    # a destination can only be created/delivered to if its origin is here.
+    webhook_allowed_origins: str = ""
     outbound_private_origins: str = "http://ollama:11434"
 
     @model_validator(mode="after")
