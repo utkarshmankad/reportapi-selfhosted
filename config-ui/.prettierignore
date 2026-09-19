@@ -1,0 +1,4 @@
+.next/
+coverage/
+lib/api-types.generated.ts
+openapi.json

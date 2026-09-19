@@ -4,6 +4,7 @@ import {
   errorMessage,
   type Schedule,
   type Scope,
+  type Connector,
   type Format,
   type Job,
 } from "../lib/api";
@@ -190,12 +191,12 @@ export function Schedules({ token }: { token: string }) {
                           onClick={() => {
                             setEditing(row);
                             setScope({
-                              connector: row.connector,
+                              connector: row.connector as Connector,
                               board_id: row.board_id || "",
                               sprint_id: row.sprint_id || "",
                             });
                             setCron(row.cron_expression);
-                            setFormat(row.output_format);
+                            setFormat(row.output_format as Format);
                           }}
                         >
                           Edit schedule

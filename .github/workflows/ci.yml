@@ -38,6 +38,17 @@ jobs:
           cache-dependency-path: config-ui/package-lock.json
       - run: npm ci
         working-directory: config-ui
+      - run: poetry run python scripts/export_openapi.py
+      - run: npm run generate:types
+        working-directory: config-ui
+      - name: Fail if generated API types are out of date
+        run: |
+          if ! git diff --quiet -- config-ui/openapi.json config-ui/lib/api-types.generated.ts; then
+            echo "config-ui/lib/api-types.generated.ts is out of date."
+            echo "Run: poetry run python scripts/export_openapi.py && (cd config-ui && npm run generate:types)"
+            git diff -- config-ui/openapi.json config-ui/lib/api-types.generated.ts
+            exit 1
+          fi
       - run: npm run typecheck && npm run lint && npm run format:check && npm run build
         working-directory: config-ui
 
