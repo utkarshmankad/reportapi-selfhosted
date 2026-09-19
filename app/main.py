@@ -7,6 +7,7 @@ from app.api.routes import config as config_routes
 from app.api.routes import health, job, report, schedule, template, webhook
 from app.config import settings
 from app.core.config_auth import require_config_token
+from app.core.errors import RequestIdMiddleware, register_error_handlers
 from app.core.logging_config import configure_logging, get_logger
 
 configure_logging(settings.log_level)
@@ -35,6 +36,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIdMiddleware)
+register_error_handlers(app)
 
 app.include_router(health.router)
 app.include_router(job.router, dependencies=[Depends(require_config_token)])
