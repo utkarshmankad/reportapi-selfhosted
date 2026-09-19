@@ -11,12 +11,13 @@ the notification the way an inline fire-and-forget call would.
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging_config import get_logger
+from app.core.retry_policy import OUTBOUND_HTTP_TIMEOUT_SECONDS, RETRY_BACKOFF
 from app.core.ssrf_guard import UnsafeURLError, safe_client, target_policy
 from app.db.models import (
     DELIVERY_STATUS_DELIVERED,
@@ -35,11 +36,9 @@ logger = get_logger(__name__)
 # explicitly, since that's an operator decision, not an automatic one.
 MAX_DELIVERY_ATTEMPTS = 5
 
-# Retry delay for a failed attempt with attempts remaining. Short enough
-# that a transient blip resolves quickly, long enough not to hammer a
-# genuinely-down destination — same policy as ReportJob's
-# RETRY_COUNTDOWN_SECONDS, kept in sync deliberately (see S5-05).
-RETRY_DELAY = timedelta(seconds=30)
+# Retry delay for a failed attempt with attempts remaining — shared with
+# ReportJob's retry backoff via app.core.retry_policy (see S5-05).
+RETRY_DELAY = RETRY_BACKOFF
 
 SIGNATURE_HEADER = "X-Webhook-Signature"
 DELIVERY_ID_HEADER = "X-Webhook-Delivery-Id"
@@ -112,7 +111,9 @@ async def send_delivery(db: AsyncSession, delivery: WebhookDelivery) -> WebhookD
 
     try:
         target_policy(destination.url, "webhook")
-        async with safe_client(destination.url, "webhook", timeout=15.0) as client:
+        async with safe_client(
+            destination.url, "webhook", timeout=OUTBOUND_HTTP_TIMEOUT_SECONDS
+        ) as client:
             response = await client.post(
                 destination.url,
                 content=body,

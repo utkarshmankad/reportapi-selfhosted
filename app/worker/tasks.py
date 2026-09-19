@@ -25,6 +25,7 @@ from app.core.job_service import (
 )
 from app.core.logging_config import get_logger
 from app.core.retention_service import enforce_report_retention
+from app.core.retry_policy import RETRY_BACKOFF_SECONDS
 from app.core.schedule_time import due_occurrences_utc
 from app.core.webhook_service import send_delivery
 from app.db.models import DELIVERY_STATUS_PENDING, ReportJob, Schedule, WebhookDelivery
@@ -33,10 +34,9 @@ from app.worker.celery_app import celery_app
 
 logger = get_logger(__name__)
 
-# Retry delay for a job that failed but has attempts remaining. Short
-# enough that a transient upstream blip resolves quickly, long enough not
-# to hammer a genuinely-down connector/provider.
-RETRY_COUNTDOWN_SECONDS = 30
+# Retry delay for a job that failed but has attempts remaining — shared
+# with WebhookDelivery's retry backoff via app.core.retry_policy (S5-05).
+RETRY_COUNTDOWN_SECONDS = RETRY_BACKOFF_SECONDS
 
 
 def _due_occurrences(schedule: Schedule, now: datetime, max_count: int) -> list[datetime]:
