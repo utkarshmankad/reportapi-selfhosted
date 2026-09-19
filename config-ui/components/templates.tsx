@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { request, errorMessage, type Template } from "../lib/api";
 import { Notice } from "./shared";
 
+interface Preview {
+  templateId: string;
+  html: string;
+}
+
 const defaultContent =
   '<h1>Project update</h1>\n<p>{{ report.created_at }}</p>\n<div style="white-space: pre-wrap">{{ report.narrative }}</div>';
 export function Templates({ token }: { token: string }) {
@@ -14,10 +19,15 @@ export function Templates({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [version, setVersion] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
-    request<Template[]>("/templates", token)
+    request<Template[]>(
+      `/templates${showArchived ? "?include_archived=true" : ""}`,
+      token,
+    )
       .then((data) => {
         if (active) {
           setRows(data);
@@ -33,7 +43,7 @@ export function Templates({ token }: { token: string }) {
     return () => {
       active = false;
     };
-  }, [token, version]);
+  }, [token, version, showArchived]);
   function reset() {
     setEditing(null);
     setName("");
@@ -59,6 +69,37 @@ export function Templates({ token }: { token: string }) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  }
+  async function setArchived(id: string, archived: boolean) {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await request(
+        `/templates/${id}/${archived ? "archive" : "restore"}`,
+        token,
+        "POST",
+      );
+      setVersion((v) => v + 1);
+      setMessage(archived ? "Template archived." : "Template restored.");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function showPreview(id: string) {
+    setError("");
+    try {
+      const result = await request<{ html: string }>(
+        `/templates/${id}/preview`,
+        token,
+        "POST",
+      );
+      setPreview({ templateId: id, html: result.html });
+    } catch (e) {
+      setError(errorMessage(e));
     }
   }
   async function remove(id: string) {
@@ -140,7 +181,17 @@ export function Templates({ token }: { token: string }) {
       <Notice message={error} error />
       <Notice message={message} />
       <section className="card">
-        <h3>Saved templates</h3>
+        <div className="section-heading">
+          <h3>Saved templates</h3>
+          <label>
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />{" "}
+            Show archived
+          </label>
+        </div>
         {loading ? (
           <p role="status">Loading templates…</p>
         ) : rows.length === 0 ? (
@@ -151,7 +202,18 @@ export function Templates({ token }: { token: string }) {
           rows.map((row) => (
             <article className="list-item" key={row.id}>
               <h4>{row.name}</h4>
+              <p className="muted">
+                v{row.version}
+                {row.archived ? " · Archived" : ""}
+              </p>
               <div className="actions">
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void showPreview(row.id)}
+                >
+                  Preview
+                </button>
                 <button
                   className="secondary"
                   disabled={busy}
@@ -164,6 +226,13 @@ export function Templates({ token }: { token: string }) {
                   Edit template
                 </button>
                 <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => void setArchived(row.id, !row.archived)}
+                >
+                  {row.archived ? "Restore" : "Archive"}
+                </button>
+                <button
                   className="danger"
                   disabled={busy}
                   onClick={() => void remove(row.id)}
@@ -171,6 +240,33 @@ export function Templates({ token }: { token: string }) {
                   Delete template
                 </button>
               </div>
+              {preview?.templateId === row.id && (
+                <div
+                  className="card"
+                  role="region"
+                  aria-label="Template preview"
+                >
+                  <div className="section-heading">
+                    <h4>Preview</h4>
+                    <button
+                      className="secondary"
+                      onClick={() => setPreview(null)}
+                    >
+                      Close preview
+                    </button>
+                  </div>
+                  <iframe
+                    title={`Preview of ${row.name}`}
+                    srcDoc={preview.html}
+                    sandbox=""
+                    style={{
+                      width: "100%",
+                      height: "400px",
+                      border: "1px solid #ccc",
+                    }}
+                  />
+                </div>
+              )}
             </article>
           ))
         )}

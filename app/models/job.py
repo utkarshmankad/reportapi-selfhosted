@@ -42,6 +42,7 @@ class ReportJobResponse(BaseModel):
     board_id: str | None
     sprint_id: str | None
     output_format: str
+    template_id: UUID | None
     report_id: UUID | None
     error_reason: str | None
     attempts: int

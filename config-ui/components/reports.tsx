@@ -3,12 +3,21 @@ import {
   request,
   errorMessage,
   downloadReport,
+  pollJob,
   type Report,
   type Scope,
   type Format,
   type Template,
+  type Job,
 } from "../lib/api";
 import { ScopeFields, FormatField, Notice } from "./shared";
+
+function jobStatusLabel(job: Job | null): string {
+  if (!job) return "";
+  if (job.status === "queued") return "Queued — waiting for a worker…";
+  if (job.status === "running") return `Generating (attempt ${job.attempts})…`;
+  return "";
+}
 
 export function Reports({ token }: { token: string }) {
   const [scope, setScope] = useState<Scope>({
@@ -26,6 +35,7 @@ export function Reports({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
   const [version, setVersion] = useState(0);
+  const [job, setJob] = useState<Job | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -53,21 +63,41 @@ export function Reports({ token }: { token: string }) {
   async function generate() {
     setBusy(true);
     setError("");
+    setJob(null);
     try {
-      const result = await request<{ report_id: string }>(
-        "/report/generate",
-        token,
-        "POST",
-        { ...scope, output_format: format },
-      );
-      setSelected(await request<Report>(`/report/${result.report_id}`, token));
+      // An idempotency key means retrying this exact click (e.g. a
+      // double-submit) resolves to the same job instead of a duplicate
+      // report — the server enforces this, not the client.
+      const idempotencyKey =
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
+      const created = await request<Job>("/report/jobs", token, "POST", {
+        ...scope,
+        output_format: format,
+        template_id: format === "pdf" && template ? template : undefined,
+        idempotency_key: idempotencyKey,
+      });
+      setJob(created);
+      const finished = await pollJob(request, created.id, token, setJob);
+      if (finished.status === "failed" || !finished.report_id) {
+        throw new Error(
+          finished.error_reason || "Report generation failed. Try again.",
+        );
+      }
+      openReport(await request<Report>(`/report/${finished.report_id}`, token));
       setOffset(0);
       setVersion((v) => v + 1);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+      setJob(null);
     }
+  }
+  function openReport(row: Report) {
+    setSelected(row);
+    setTemplate(row.template_id || "");
   }
   async function remove(id: string) {
     if (!window.confirm("Delete this report permanently?")) return;
@@ -103,6 +133,28 @@ export function Reports({ token }: { token: string }) {
           <fieldset disabled={busy}>
             <ScopeFields value={scope} onChange={setScope} />
             <FormatField value={format} onChange={setFormat} />
+            {format === "pdf" && (
+              <label>
+                PDF template
+                <select
+                  value={template}
+                  onChange={(e) => setTemplate(e.target.value)}
+                >
+                  <option value="">Default template</option>
+                  {templates
+                    .filter((t) => !t.archived)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+                <small>
+                  Selected once, here — the report always renders with this
+                  exact template version, even if it's edited later.
+                </small>
+              </label>
+            )}
             <button type="submit">
               {busy ? "Working…" : "Generate report"}
             </button>
@@ -110,7 +162,8 @@ export function Reports({ token }: { token: string }) {
         </form>
         {busy && (
           <p role="status">
-            Please keep this page open while the request completes.
+            {jobStatusLabel(job) ||
+              "Please keep this page open while the request completes."}
           </p>
         )}
       </section>
@@ -197,7 +250,7 @@ export function Reports({ token }: { token: string }) {
                       <div className="actions">
                         <button
                           className="secondary"
-                          onClick={() => setSelected(row)}
+                          onClick={() => openReport(row)}
                         >
                           View report
                         </button>

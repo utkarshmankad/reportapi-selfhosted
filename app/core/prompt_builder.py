@@ -6,6 +6,12 @@ from datetime import datetime, timezone
 
 from app.models.ticket import Ticket
 
+# Bump whenever SYSTEM_PROMPT_TEMPLATE's rules change in a way that would
+# alter narrative content or structure. Persisted per-report so a stored
+# narrative can always be traced back to the exact rules that produced it,
+# even after this template is later edited.
+PROMPT_VERSION = 1
+
 STALE_DAYS_THRESHOLD = 3
 HIGH_PRIORITY_VALUES = {"high", "critical", "p0", "p1"}
 

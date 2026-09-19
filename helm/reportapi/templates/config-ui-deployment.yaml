@@ -26,6 +26,10 @@ spec:
           env:
             - name: API_INTERNAL_URL
               value: "http://{{ include "reportapi.fullname" . }}-api:{{ .Values.api.service.port }}"
+            {{- if .Values.configUi.publicOrigin }}
+            - name: UI_PUBLIC_ORIGIN
+              value: {{ .Values.configUi.publicOrigin | quote }}
+            {{- end }}
 ---
 apiVersion: v1
 kind: Service
