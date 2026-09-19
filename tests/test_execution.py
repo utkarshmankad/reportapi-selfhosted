@@ -209,9 +209,16 @@ def test_due_occurrences_includes_due_and_excludes_future():
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(minutes=2),
     )
-    future = Schedule(connector="jira", board_id="D", cron_expression="0 0 1 1 *", created_at=now)
+    future = Schedule(
+        connector="jira",
+        board_id="D",
+        cron_expression="0 0 1 1 *",
+        timezone="UTC",
+        created_at=now,
+    )
 
     assert len(tasks._due_occurrences(due, now, tasks.MAX_BACKFILL_OCCURRENCES)) >= 1
     assert tasks._due_occurrences(future, now, tasks.MAX_BACKFILL_OCCURRENCES) == []
@@ -223,6 +230,7 @@ def test_due_occurrences_bounded_by_max_count():
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(days=1),
     )
     occurrences = tasks._due_occurrences(long_overdue, now, 3)
@@ -528,6 +536,7 @@ async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(minutes=2),
         active=True,
     )

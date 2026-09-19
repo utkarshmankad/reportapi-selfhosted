@@ -267,6 +267,12 @@
               }
             ],
             "title": "Template Id"
+          },
+          "timezone": {
+            "default": "UTC",
+            "maxLength": 64,
+            "title": "Timezone",
+            "type": "string"
           }
         },
         "required": [
@@ -623,6 +629,23 @@
           "llm_provider"
         ],
         "title": "LLMConfigRequest",
+        "type": "object"
+      },
+      "NextRunsResponse": {
+        "properties": {
+          "next_runs_utc": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Next Runs Utc",
+            "type": "array"
+          }
+        },
+        "required": [
+          "next_runs_utc"
+        ],
+        "title": "NextRunsResponse",
         "type": "object"
       },
       "ReportJobResponse": {
@@ -1063,6 +1086,10 @@
               }
             ],
             "title": "Sprint Id"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
           }
         },
         "required": [
@@ -1071,6 +1098,7 @@
           "board_id",
           "sprint_id",
           "cron_expression",
+          "timezone",
           "output_format",
           "assigned_means_in_progress",
           "period_start",
@@ -2717,6 +2745,77 @@
           }
         },
         "summary": "List Schedule Jobs",
+        "tags": [
+          "schedule"
+        ]
+      }
+    },
+    "/api/schedule/{schedule_id}/next-runs": {
+      "get": {
+        "operationId": "preview_next_runs_api_schedule__schedule_id__next_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schedule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Schedule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Count",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-config-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Config-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextRunsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Next Runs",
         "tags": [
           "schedule"
         ]

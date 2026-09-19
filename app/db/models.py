@@ -81,6 +81,12 @@ class Schedule(Base):
     board_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sprint_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
+    # An IANA zone name (e.g. "America/New_York"), not a fixed UTC offset —
+    # cron fields are evaluated as wall-clock time in this zone, so a
+    # schedule stays meaning "9am local" across DST transitions instead of
+    # drifting by an hour twice a year. See docs/scheduling.md for the
+    # DST/missed-run policy this implies.
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
     assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

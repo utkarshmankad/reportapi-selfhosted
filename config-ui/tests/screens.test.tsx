@@ -48,6 +48,7 @@ const schedule: Schedule = {
   board_id: "DEMO",
   sprint_id: "",
   cron_expression: "0 9 * * 1",
+  timezone: "UTC",
   output_format: "text",
   active: true,
   assigned_means_in_progress: true,
@@ -310,8 +311,8 @@ it("creates, edits, pauses/resumes and deletes schedules", async () => {
   await screen.findByText(/No schedules yet/);
   await user.type(screen.getByLabelText("Project key"), "DEMO");
   await user.selectOptions(screen.getByLabelText("Output format"), "pdf");
-  await user.clear(screen.getByLabelText("Cron expression (UTC)"));
-  await user.type(screen.getByLabelText("Cron expression (UTC)"), "0 12 * * *");
+  await user.clear(screen.getByLabelText("Cron expression"));
+  await user.type(screen.getByLabelText("Cron expression"), "0 12 * * *");
   await user.click(screen.getByRole("button", { name: "Create schedule" }));
   await screen.findByText("Active");
   await user.click(screen.getByRole("button", { name: "Edit schedule" }));
@@ -325,6 +326,29 @@ it("creates, edits, pauses/resumes and deletes schedules", async () => {
   await user.click(screen.getByRole("button", { name: "Edit schedule" }));
   await user.click(screen.getByRole("button", { name: "Delete schedule" }));
   expect(await screen.findByText(/No schedules yet/)).toBeVisible();
+});
+it("sets a schedule timezone and previews next runs", async () => {
+  const user = userEvent.setup();
+  api.mockImplementation(async (path) => {
+    if (path === "/schedule") return schedules;
+    if (path.includes("/next-runs"))
+      return {
+        next_runs_utc: ["2026-09-21T13:00:00Z", "2026-09-28T13:00:00Z"],
+      };
+    throw new Error(`Unexpected path ${path}`);
+  });
+  render(<Schedules token="t" />);
+  await screen.findByText("UTC");
+  expect(screen.getByLabelText("Timezone (IANA)")).toHaveValue("UTC");
+  await user.click(screen.getByRole("button", { name: "Preview next runs" }));
+  const previewPanel = within(
+    screen.getByRole("region", { name: "Next runs preview" }),
+  );
+  expect(await previewPanel.findAllByRole("listitem")).toHaveLength(2);
+  await user.click(screen.getByRole("button", { name: "Hide next runs" }));
+  expect(
+    screen.queryByRole("region", { name: "Next runs preview" }),
+  ).not.toBeInTheDocument();
 });
 it("handles schedule errors and section scopes", async () => {
   const user = userEvent.setup();

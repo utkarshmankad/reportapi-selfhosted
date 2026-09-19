@@ -12,7 +12,6 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
-from croniter import croniter
 from redis.asyncio import Redis
 from sqlalchemy import select
 
@@ -25,6 +24,7 @@ from app.core.job_service import (
     run_job,
 )
 from app.core.logging_config import get_logger
+from app.core.schedule_time import due_occurrences_utc
 from app.core.webhook_service import send_delivery
 from app.db.models import DELIVERY_STATUS_PENDING, ReportJob, Schedule, WebhookDelivery
 from app.db.session import AsyncSessionLocal, engine
@@ -42,21 +42,14 @@ def _due_occurrences(schedule: Schedule, now: datetime, max_count: int) -> list[
     """
     Cron occurrences for `schedule` that are due (<= now) and haven't been
     claimed yet, starting just after the last occurrence this schedule
-    attempted. Bounded by max_count so a schedule that was paused or a
-    worker that was down for a long time doesn't burst-create an unbounded
-    backlog of catch-up jobs in one pass.
+    attempted, evaluated as wall-clock time in the schedule's configured
+    IANA timezone (see app.core.schedule_time for the DST/missed-run
+    policy this implies). Bounded by max_count so a schedule that was
+    paused or a worker that was down for a long time doesn't burst-create
+    an unbounded backlog of catch-up jobs in one pass.
     """
     base = schedule.last_attempted_at or schedule.created_at
-    cron = croniter(schedule.cron_expression, base)
-    occurrences: list[datetime] = []
-    while len(occurrences) < max_count:
-        next_occurrence = cron.get_next(datetime)
-        if next_occurrence.tzinfo is None:
-            next_occurrence = next_occurrence.replace(tzinfo=timezone.utc)
-        if next_occurrence > now:
-            break
-        occurrences.append(next_occurrence)
-    return occurrences
+    return due_occurrences_utc(schedule.cron_expression, schedule.timezone, base, now, max_count)
 
 
 async def _dispatch_due_schedules() -> int:

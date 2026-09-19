@@ -314,6 +314,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/schedule/{schedule_id}/next-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Next Runs */
+        get: operations["preview_next_runs_api_schedule__schedule_id__next_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -607,6 +624,11 @@ export interface components {
             sprint_id?: string | null;
             /** Template Id */
             template_id?: string | null;
+            /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
         };
         /** CreateTemplateRequest */
         CreateTemplateRequest: {
@@ -720,6 +742,11 @@ export interface components {
             llm_provider: "openai" | "anthropic" | "ollama" | "groq";
             /** Ollama Base Url */
             ollama_base_url?: string | null;
+        };
+        /** NextRunsResponse */
+        NextRunsResponse: {
+            /** Next Runs Utc */
+            next_runs_utc: string[];
         };
         /** ReportJobResponse */
         ReportJobResponse: {
@@ -849,6 +876,8 @@ export interface components {
             period_start: string | null;
             /** Sprint Id */
             sprint_id: string | null;
+            /** Timezone */
+            timezone: string;
         };
         /** TemplatePreviewResponse */
         TemplatePreviewResponse: {
@@ -1720,6 +1749,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportJobResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_next_runs_api_schedule__schedule_id__next_runs_get: {
+        parameters: {
+            query?: {
+                count?: number;
+            };
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NextRunsResponse"];
                 };
             };
             /** @description Validation Error */
