@@ -1915,6 +1915,57 @@
         ]
       }
     },
+    "/api/ops/status": {
+      "get": {
+        "operationId": "ops_status_api_ops_status_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-config-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Config-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ops Status Api Ops Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ops Status",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
     "/api/report/generate": {
       "post": {
         "operationId": "generate_report_route_api_report_generate_post",

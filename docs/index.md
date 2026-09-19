@@ -40,3 +40,4 @@ curl -X POST http://localhost:8000/api/report/generate \
 - [LLM configuration](llm-config.md)
 - [Template guide](template-guide.md)
 - [Scheduling: timezones, DST, and missed runs](scheduling.md)
+- [Operations runbook](runbook.md)
