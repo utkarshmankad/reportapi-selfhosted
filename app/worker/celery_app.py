@@ -17,5 +17,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.recover_stuck_report_jobs",
         "schedule": crontab(minute="*/5"),
     },
+    "dispatch-pending-webhook-deliveries-every-minute": {
+        "task": "app.worker.tasks.dispatch_pending_webhook_deliveries",
+        "schedule": crontab(minute="*"),
+    },
+    "enforce-report-retention-daily": {
+        "task": "app.worker.tasks.enforce_report_retention",
+        "schedule": crontab(hour=3, minute=0),
+    },
 }
 celery_app.conf.timezone = "UTC"

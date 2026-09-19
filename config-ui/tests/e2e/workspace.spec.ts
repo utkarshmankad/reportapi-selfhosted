@@ -40,7 +40,7 @@ test("authenticated setup, report/PDF, schedules and templates work in the real 
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.getByText("Paused", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit schedule" }).click();
-  await page.getByLabel("Cron expression (UTC)").fill("0 10 * * 1");
+  await page.getByLabel("Cron expression", { exact: true }).fill("0 10 * * 1");
   await page.getByRole("button", { name: "Save schedule" }).click();
   await expect(page.getByText("0 10 * * 1", { exact: true })).toBeVisible();
   page.on("dialog", (dialog) => dialog.accept());

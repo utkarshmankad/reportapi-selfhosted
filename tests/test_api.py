@@ -273,6 +273,44 @@ def test_schedule_create_edit_pause_delete(client, db):
         assert client.post("/api/schedule", json=payload | change).status_code == 422
 
 
+def test_schedule_timezone_defaults_and_validates(client):
+    payload = {"connector": "jira", "board_id": "DEMO", "cron_expression": "0 9 * * 1"}
+    default_tz = client.post("/api/schedule", json=payload)
+    assert default_tz.status_code == 200
+    assert default_tz.json()["timezone"] == "UTC"
+
+    explicit_tz = client.post("/api/schedule", json={**payload, "timezone": "America/New_York"})
+    assert explicit_tz.status_code == 200
+    assert explicit_tz.json()["timezone"] == "America/New_York"
+
+    bad_tz = client.post("/api/schedule", json={**payload, "timezone": "Mars/Phobos"})
+    assert bad_tz.status_code == 422
+
+
+def test_schedule_next_runs_preview(client, db):
+    schedule = Schedule(
+        id=uuid4(),
+        connector="jira",
+        board_id="DEMO",
+        cron_expression="0 9 * * 1",
+        timezone="America/New_York",
+        output_format="text",
+        active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.get.return_value = schedule
+    result = client.get(f"/api/schedule/{schedule.id}/next-runs?count=3")
+    assert result.status_code == 200
+    runs = result.json()["next_runs_utc"]
+    assert len(runs) == 3
+    assert runs == sorted(runs)
+
+
+def test_schedule_next_runs_missing_returns_404(client, db):
+    db.get.return_value = None
+    assert client.get(f"/api/schedule/{uuid4()}/next-runs").status_code == 404
+
+
 @pytest.mark.parametrize(
     "connector,body",
     [

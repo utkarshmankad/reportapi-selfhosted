@@ -209,9 +209,16 @@ def test_due_occurrences_includes_due_and_excludes_future():
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(minutes=2),
     )
-    future = Schedule(connector="jira", board_id="D", cron_expression="0 0 1 1 *", created_at=now)
+    future = Schedule(
+        connector="jira",
+        board_id="D",
+        cron_expression="0 0 1 1 *",
+        timezone="UTC",
+        created_at=now,
+    )
 
     assert len(tasks._due_occurrences(due, now, tasks.MAX_BACKFILL_OCCURRENCES)) >= 1
     assert tasks._due_occurrences(future, now, tasks.MAX_BACKFILL_OCCURRENCES) == []
@@ -223,6 +230,7 @@ def test_due_occurrences_bounded_by_max_count():
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(days=1),
     )
     occurrences = tasks._due_occurrences(long_overdue, now, 3)
@@ -528,6 +536,7 @@ async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
         connector="jira",
         board_id="D",
         cron_expression="* * * * *",
+        timezone="UTC",
         created_at=now - timedelta(minutes=2),
         active=True,
     )
@@ -551,3 +560,52 @@ async def test_dispatch_due_schedules_claims_and_dispatches(monkeypatch):
     assert dispatched == 1
     delay.assert_called_once_with("job-1")
     assert due.last_attempted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_webhook_deliveries_dispatches_ready_rows(monkeypatch):
+    from app.db.models import WebhookDelivery
+
+    ready = WebhookDelivery(id="d1", status="pending", payload="{}")
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.execute.return_value.scalars.return_value.all.return_value = [ready]
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+    delay = MagicMock()
+    monkeypatch.setattr(tasks.deliver_webhook, "delay", delay)
+
+    count = await tasks._dispatch_pending_webhook_deliveries()
+
+    assert count == 1
+    delay.assert_called_once_with("d1")
+
+
+def test_deliver_webhook_task_does_not_self_requeue(monkeypatch):
+    monkeypatch.setattr(tasks, "_deliver_webhook_and_dispose", AsyncMock(return_value="pending"))
+    apply_async = MagicMock()
+    monkeypatch.setattr(tasks.deliver_webhook, "apply_async", apply_async)
+
+    status = tasks.deliver_webhook("d1")
+
+    assert status == "pending"
+    apply_async.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_enforce_report_retention_uses_configured_days(monkeypatch):
+    db = MagicMock()
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+    enforce = AsyncMock(return_value=3)
+    monkeypatch.setattr(tasks, "enforce_report_retention", enforce)
+    monkeypatch.setattr(tasks.settings, "report_retention_days", 14)
+
+    count = await tasks._enforce_report_retention()
+
+    assert count == 3
+    enforce.assert_awaited_once_with(db, 14)

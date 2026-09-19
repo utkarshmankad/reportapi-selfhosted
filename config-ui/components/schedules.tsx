@@ -15,6 +15,7 @@ export function Schedules({ token }: { token: string }) {
   const [rows, setRows] = useState<Schedule[]>([]);
   const [scope, setScope] = useState(empty);
   const [cron, setCron] = useState("0 9 * * 1");
+  const [tz, setTz] = useState("UTC");
   const [format, setFormat] = useState<Format>("text");
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [error, setError] = useState("");
@@ -26,6 +27,9 @@ export function Schedules({ token }: { token: string }) {
   const [history, setHistory] = useState<Job[]>([]);
   const [historyError, setHistoryError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [previewFor, setPreviewFor] = useState<string | null>(null);
+  const [previewRuns, setPreviewRuns] = useState<string[]>([]);
+  const [previewError, setPreviewError] = useState("");
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -50,7 +54,26 @@ export function Schedules({ token }: { token: string }) {
     setEditing(null);
     setScope(empty);
     setCron("0 9 * * 1");
+    setTz("UTC");
     setFormat("text");
+  }
+  async function togglePreview(scheduleId: string) {
+    if (previewFor === scheduleId) {
+      setPreviewFor(null);
+      return;
+    }
+    setPreviewFor(scheduleId);
+    setPreviewRuns([]);
+    setPreviewError("");
+    try {
+      const result = await request<{ next_runs_utc: string[] }>(
+        `/schedule/${scheduleId}/next-runs?count=5`,
+        token,
+      );
+      setPreviewRuns(result.next_runs_utc);
+    } catch (e) {
+      setPreviewError(errorMessage(e));
+    }
   }
   async function toggleHistory(scheduleId: string) {
     if (historyFor === scheduleId) {
@@ -91,7 +114,11 @@ export function Schedules({ token }: { token: string }) {
         <div>
           <p className="eyebrow">03 / AUTOMATE</p>
           <h2>Schedules</h2>
-          <p>Set a cadence for recurring reports. All times are UTC.</p>
+          <p>
+            Set a cadence for recurring reports. Times are evaluated in the
+            schedule's own timezone — see the scheduling guide for how DST and
+            missed runs are handled.
+          </p>
         </div>
       </header>
       <section className="card">
@@ -106,6 +133,7 @@ export function Schedules({ token }: { token: string }) {
                 {
                   ...scope,
                   cron_expression: cron,
+                  timezone: tz,
                   output_format: format,
                   active: editing?.active ?? true,
                 },
@@ -118,18 +146,30 @@ export function Schedules({ token }: { token: string }) {
             <ScopeFields value={scope} onChange={setScope} />
             <div className="form-grid">
               <label>
-                Cron expression (UTC)
+                Cron expression
                 <input
-                  aria-label="Cron expression (UTC)"
+                  aria-label="Cron expression"
                   value={cron}
                   onChange={(e) => setCron(e.target.value)}
                   required
                   maxLength={100}
                 />
                 <small>
-                  Five fields: minute hour day month weekday. Monday 09:00 UTC:
-                  0 9 * * 1.
+                  Five fields: minute hour day month weekday, in the timezone
+                  below. 9am every Monday: 0 9 * * 1.
                 </small>
+              </label>
+              <label>
+                Timezone (IANA)
+                <input
+                  aria-label="Timezone (IANA)"
+                  value={tz}
+                  onChange={(e) => setTz(e.target.value)}
+                  required
+                  maxLength={64}
+                  placeholder="UTC"
+                />
+                <small>e.g. UTC, America/New_York, Europe/London.</small>
               </label>
               <FormatField value={format} onChange={setFormat} />
             </div>
@@ -162,7 +202,8 @@ export function Schedules({ token }: { token: string }) {
               <thead>
                 <tr>
                   <th>Source / scope</th>
-                  <th>Cadence (UTC)</th>
+                  <th>Cadence</th>
+                  <th>Timezone</th>
                   <th>Status</th>
                   <th>Last attempt</th>
                   <th>Actions</th>
@@ -177,6 +218,7 @@ export function Schedules({ token }: { token: string }) {
                     <td>
                       <code>{row.cron_expression}</code>
                     </td>
+                    <td>{row.timezone}</td>
                     <td>{row.active ? "Active" : "Paused"}</td>
                     <td>
                       {row.last_run_at
@@ -196,6 +238,7 @@ export function Schedules({ token }: { token: string }) {
                               sprint_id: row.sprint_id || "",
                             });
                             setCron(row.cron_expression);
+                            setTz(row.timezone);
                             setFormat(row.output_format as Format);
                           }}
                         >
@@ -242,6 +285,14 @@ export function Schedules({ token }: { token: string }) {
                           {historyFor === row.id
                             ? "Hide history"
                             : "View history"}
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => void togglePreview(row.id)}
+                        >
+                          {previewFor === row.id
+                            ? "Hide next runs"
+                            : "Preview next runs"}
                         </button>
                       </div>
                     </td>
@@ -295,6 +346,25 @@ export function Schedules({ token }: { token: string }) {
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        )}
+        {previewFor && (
+          <div
+            className="table-wrap"
+            role="region"
+            aria-label="Next runs preview"
+          >
+            <h4>Next runs (UTC)</h4>
+            <Notice message={previewError} error />
+            {previewRuns.length === 0 && !previewError ? (
+              <p role="status">Loading preview…</p>
+            ) : (
+              <ul>
+                {previewRuns.map((run) => (
+                  <li key={run}>{new Date(run).toLocaleString()}</li>
+                ))}
+              </ul>
             )}
           </div>
         )}

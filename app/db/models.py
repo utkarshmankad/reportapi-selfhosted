@@ -20,6 +20,13 @@ JOB_STATUS_RUNNING = "running"
 JOB_STATUS_SUCCEEDED = "succeeded"
 JOB_STATUS_FAILED = "failed"
 
+# WebhookDelivery.status values — same forward-moving shape as ReportJob,
+# for the same reason: an attempt-bounded retry is a deliberate, visible
+# state transition, not a silent in-place mutation.
+DELIVERY_STATUS_PENDING = "pending"
+DELIVERY_STATUS_DELIVERED = "delivered"
+DELIVERY_STATUS_FAILED = "failed"
+
 
 class Report(Base):
     __tablename__ = "reports"
@@ -74,6 +81,12 @@ class Schedule(Base):
     board_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sprint_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cron_expression: Mapped[str] = mapped_column(String(100), nullable=False)
+    # An IANA zone name (e.g. "America/New_York"), not a fixed UTC offset —
+    # cron fields are evaluated as wall-clock time in this zone, so a
+    # schedule stays meaning "9am local" across DST transitions instead of
+    # drifting by an hour twice a year. See docs/scheduling.md for the
+    # DST/missed-run policy this implies.
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
     assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -167,3 +180,61 @@ class ReportTemplate(Base):
     # remain fetchable by id, since past reports may still reference them.
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebhookDestination(Base):
+    """
+    An operator-approved delivery target. `url`'s origin must be present in
+    WEBHOOK_ALLOWED_ORIGINS at both creation and delivery time — the same
+    operator-controlled-allowlist pattern as Jira/Ollama — since a webhook
+    URL is otherwise an SSRF vector supplied by whoever can reach this API.
+    """
+
+    __tablename__ = "webhook_destinations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # HMAC-SHA256 signing secret for the X-Webhook-Signature header — lets
+    # the receiver verify a delivery actually came from this instance.
+    secret: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebhookDelivery(Base):
+    """
+    The transactional outbox: one row per (destination, report) delivery
+    attempt-series, inserted in the same transaction as the report/job
+    state that triggered it. A worker crash between "decided to notify"
+    and "sent the HTTP request" leaves a `pending` row a delivery task can
+    still pick up — nothing is lost the way an in-memory fire-and-forget
+    webhook call would lose it.
+    """
+
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    destination_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("webhook_destinations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("reports.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=DELIVERY_STATUS_PENDING)
+    # The exact JSON body sent (and re-sent on retry) — captured once at
+    # enqueue time so a delivery's content never depends on the report's
+    # current state, which may have changed or been deleted by retry time.
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # NULL means "never attempted, ready now". Set on a failed attempt so
+    # the periodic dispatch sweep — the *only* thing that ever dispatches a
+    # delivery — skips a row that's mid-backoff instead of double-sending
+    # it alongside whatever already-scheduled retry exists for it.
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

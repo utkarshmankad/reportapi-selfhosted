@@ -12,7 +12,6 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
-from croniter import croniter
 from redis.asyncio import Redis
 from sqlalchemy import select
 
@@ -25,37 +24,33 @@ from app.core.job_service import (
     run_job,
 )
 from app.core.logging_config import get_logger
-from app.db.models import ReportJob, Schedule
+from app.core.retention_service import enforce_report_retention
+from app.core.retry_policy import RETRY_BACKOFF_SECONDS
+from app.core.schedule_time import due_occurrences_utc
+from app.core.webhook_service import send_delivery
+from app.db.models import DELIVERY_STATUS_PENDING, ReportJob, Schedule, WebhookDelivery
 from app.db.session import AsyncSessionLocal, engine
 from app.worker.celery_app import celery_app
 
 logger = get_logger(__name__)
 
-# Retry delay for a job that failed but has attempts remaining. Short
-# enough that a transient upstream blip resolves quickly, long enough not
-# to hammer a genuinely-down connector/provider.
-RETRY_COUNTDOWN_SECONDS = 30
+# Retry delay for a job that failed but has attempts remaining — shared
+# with WebhookDelivery's retry backoff via app.core.retry_policy (S5-05).
+RETRY_COUNTDOWN_SECONDS = RETRY_BACKOFF_SECONDS
 
 
 def _due_occurrences(schedule: Schedule, now: datetime, max_count: int) -> list[datetime]:
     """
     Cron occurrences for `schedule` that are due (<= now) and haven't been
     claimed yet, starting just after the last occurrence this schedule
-    attempted. Bounded by max_count so a schedule that was paused or a
-    worker that was down for a long time doesn't burst-create an unbounded
-    backlog of catch-up jobs in one pass.
+    attempted, evaluated as wall-clock time in the schedule's configured
+    IANA timezone (see app.core.schedule_time for the DST/missed-run
+    policy this implies). Bounded by max_count so a schedule that was
+    paused or a worker that was down for a long time doesn't burst-create
+    an unbounded backlog of catch-up jobs in one pass.
     """
     base = schedule.last_attempted_at or schedule.created_at
-    cron = croniter(schedule.cron_expression, base)
-    occurrences: list[datetime] = []
-    while len(occurrences) < max_count:
-        next_occurrence = cron.get_next(datetime)
-        if next_occurrence.tzinfo is None:
-            next_occurrence = next_occurrence.replace(tzinfo=timezone.utc)
-        if next_occurrence > now:
-            break
-        occurrences.append(next_occurrence)
-    return occurrences
+    return due_occurrences_utc(schedule.cron_expression, schedule.timezone, base, now, max_count)
 
 
 async def _dispatch_due_schedules() -> int:
@@ -158,4 +153,78 @@ def recover_stuck_report_jobs() -> int:
     count = asyncio.run(_recover_stuck_report_jobs_and_dispose())
     if count:
         logger.warning("recovered stuck report jobs", extra={"count": count})
+    return count
+
+
+async def _dispatch_pending_webhook_deliveries() -> int:
+    now = datetime.now(timezone.utc)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(WebhookDelivery).where(
+                WebhookDelivery.status == DELIVERY_STATUS_PENDING,
+                (WebhookDelivery.next_attempt_at.is_(None))
+                | (WebhookDelivery.next_attempt_at <= now),
+            )
+        )
+        pending = list(result.scalars().all())
+        for delivery in pending:
+            deliver_webhook.delay(str(delivery.id))
+        return len(pending)
+
+
+async def _dispatch_pending_webhook_deliveries_and_dispose() -> int:
+    try:
+        return await _dispatch_pending_webhook_deliveries()
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.worker.tasks.dispatch_pending_webhook_deliveries")
+def dispatch_pending_webhook_deliveries() -> int:
+    return asyncio.run(_dispatch_pending_webhook_deliveries_and_dispose())
+
+
+async def _deliver_webhook(delivery_id: str) -> str:
+    async with AsyncSessionLocal() as db:
+        delivery = await db.get(WebhookDelivery, UUID(delivery_id))
+        if delivery is None:
+            return "missing"
+        result = await send_delivery(db, delivery)
+        return result.status
+
+
+async def _deliver_webhook_and_dispose(delivery_id: str) -> str:
+    try:
+        return await _deliver_webhook(delivery_id)
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.worker.tasks.deliver_webhook")
+def deliver_webhook(delivery_id: str) -> str:
+    # No self-requeue here (unlike execute_report_job): a retryable
+    # failure sets next_attempt_at and waits for the next
+    # dispatch_pending_webhook_deliveries sweep to pick it back up. A
+    # single dispatch path — never two racing schedulers for the same
+    # delivery — is the whole point of the next_attempt_at column.
+    return asyncio.run(_deliver_webhook_and_dispose(delivery_id))
+
+
+async def _enforce_report_retention() -> int:
+    async with AsyncSessionLocal() as db:
+        return await enforce_report_retention(db, settings.report_retention_days)
+
+
+async def _enforce_report_retention_and_dispose() -> int:
+    try:
+        return await _enforce_report_retention()
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.worker.tasks.enforce_report_retention")
+def enforce_report_retention_task() -> int:
+    count = asyncio.run(_enforce_report_retention_and_dispose())
+    if count:
+        logger.info("retention sweep deleted reports", extra={"count": count})
     return count

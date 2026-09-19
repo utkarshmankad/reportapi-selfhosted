@@ -287,3 +287,49 @@ async def test_lost_claim_race_does_not_break_subsequent_session_use():
         won = await claim_schedule_occurrences(db, sched_b, [scheduled_for])
         assert len(won) == 1
         assert won[0].schedule_id == schedule_b.id
+
+
+@pytest.mark.asyncio
+async def test_successful_job_enqueues_webhook_deliveries():
+    """run_job's success path must create the webhook outbox rows in the
+    same transaction it commits the job/report success in (S5-01)."""
+    from app.db.models import Report, WebhookDelivery, WebhookDestination
+
+    async with AsyncSessionLocal() as db:
+        destination = WebhookDestination(
+            name="hook", url="https://hooks.example.com/x", secret="s", active=True
+        )
+        db.add(destination)
+        job = ReportJob(status=JOB_STATUS_QUEUED, connector="jira", board_id="PROJ", sprint_id=None)
+        db.add(job)
+        await db.commit()
+        await db.refresh(destination)
+        await db.refresh(job)
+
+    fake_report = Report(
+        connector="jira",
+        board_id="PROJ",
+        status="complete",
+        model_used="openai",
+        tokens_used=10,
+        ticket_count=1,
+        narrative="ok",
+        output_format="text",
+    )
+    with patch(
+        "app.core.job_service.generate_report",
+        AsyncMock(return_value=(fake_report, 1)),
+    ):
+        async with AsyncSessionLocal() as db:
+            db.add(fake_report)
+            await db.commit()
+            job = await db.get(ReportJob, job.id)
+            await run_job(db, job)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(WebhookDelivery).where(WebhookDelivery.destination_id == destination.id)
+        )
+        deliveries = result.scalars().all()
+        assert len(deliveries) == 1
+        assert deliveries[0].status == "pending"
