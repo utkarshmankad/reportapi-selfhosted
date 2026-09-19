@@ -24,6 +24,7 @@ from app.core.job_service import (
     run_job,
 )
 from app.core.logging_config import get_logger
+from app.core.retention_service import enforce_report_retention
 from app.core.schedule_time import due_occurrences_utc
 from app.core.webhook_service import send_delivery
 from app.db.models import DELIVERY_STATUS_PENDING, ReportJob, Schedule, WebhookDelivery
@@ -207,3 +208,23 @@ def deliver_webhook(delivery_id: str) -> str:
     # single dispatch path — never two racing schedulers for the same
     # delivery — is the whole point of the next_attempt_at column.
     return asyncio.run(_deliver_webhook_and_dispose(delivery_id))
+
+
+async def _enforce_report_retention() -> int:
+    async with AsyncSessionLocal() as db:
+        return await enforce_report_retention(db, settings.report_retention_days)
+
+
+async def _enforce_report_retention_and_dispose() -> int:
+    try:
+        return await _enforce_report_retention()
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.worker.tasks.enforce_report_retention")
+def enforce_report_retention_task() -> int:
+    count = asyncio.run(_enforce_report_retention_and_dispose())
+    if count:
+        logger.info("retention sweep deleted reports", extra={"count": count})
+    return count

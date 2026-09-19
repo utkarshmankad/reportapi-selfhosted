@@ -592,3 +592,20 @@ def test_deliver_webhook_task_does_not_self_requeue(monkeypatch):
 
     assert status == "pending"
     apply_async.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_enforce_report_retention_uses_configured_days(monkeypatch):
+    db = MagicMock()
+    session = MagicMock()
+    session.return_value.__aenter__ = AsyncMock(return_value=db)
+    session.return_value.__aexit__ = AsyncMock(return_value=False)
+    monkeypatch.setattr(tasks, "AsyncSessionLocal", session)
+    enforce = AsyncMock(return_value=3)
+    monkeypatch.setattr(tasks, "enforce_report_retention", enforce)
+    monkeypatch.setattr(tasks.settings, "report_retention_days", 14)
+
+    count = await tasks._enforce_report_retention()
+
+    assert count == 3
+    enforce.assert_awaited_once_with(db, 14)
