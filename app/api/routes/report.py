@@ -26,8 +26,6 @@ async def generate_report_route(
     request: GenerateReportRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    if request.template_id:
-        raise HTTPException(status_code=422, detail="Select templates on the render endpoint")
     try:
         report, ticket_count = await generate_report(
             db=db,
@@ -38,6 +36,7 @@ async def generate_report_route(
             assigned_means_in_progress=request.assigned_means_in_progress,
             period_start=request.period_start,
             period_end=request.period_end,
+            template_id=request.template_id,
         )
     except ReportGenerationError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
@@ -55,6 +54,8 @@ async def generate_report_route(
         period_start=report.period_start,
         period_end=report.period_end,
         period_semantics=report.period_semantics,
+        template_id=report.template_id,
+        template_version=report.template_version,
     )
 
 
@@ -76,12 +77,21 @@ async def render_report(
         return Response(content=render_markdown(report), media_type="text/markdown")
 
     if format == "pdf":
-        template_content = DEFAULT_TEMPLATE
         if template_id:
+            # An explicit override — e.g. previewing "what if I used this
+            # other template" — always uses that template's live content,
+            # not a frozen snapshot.
             template = await db.get(ReportTemplate, template_id)
             if not template:
                 raise HTTPException(status_code=404, detail="Template not found")
             template_content = template.content
+        elif report.template_snapshot:
+            # The template selected when this report was generated, frozen
+            # at that time — protected from later edits or deletion of the
+            # live template row.
+            template_content = report.template_snapshot
+        else:
+            template_content = DEFAULT_TEMPLATE
 
         try:
             pdf_bytes = await run_in_threadpool(render_report_pdf, template_content, report)

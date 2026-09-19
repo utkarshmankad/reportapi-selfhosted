@@ -16,9 +16,6 @@ router = APIRouter(prefix="/api/report/jobs", tags=["report-jobs"])
 
 @router.post("", response_model=ReportJobResponse)
 async def create_job(request: CreateReportJobRequest, db: AsyncSession = Depends(get_db)):
-    if request.template_id:
-        raise HTTPException(status_code=422, detail="Select templates on the render endpoint")
-
     job, created = await create_report_job(
         db,
         connector=request.connector,
@@ -28,6 +25,7 @@ async def create_job(request: CreateReportJobRequest, db: AsyncSession = Depends
         assigned_means_in_progress=request.assigned_means_in_progress,
         period_start=request.period_start,
         period_end=request.period_end,
+        template_id=request.template_id,
         idempotency_key=request.idempotency_key,
     )
 

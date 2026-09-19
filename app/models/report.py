@@ -52,6 +52,9 @@ class GenerateReportRequest(BaseModel):
     board_id: str | None = Field(default=None, max_length=100)
     sprint_id: str | None = Field(default=None, max_length=100)
     output_format: Literal["text", "markdown", "pdf"] = "text"
+    # Selected once, up front, and persisted on the resulting report/job —
+    # not re-selected at render time — so a report is always rendered with
+    # the exact template (and version) that was chosen when it was made.
     template_id: UUID | None = None
     # GitHub has no native "in progress" state; treating an assigned-but-
     # unlabeled open issue as in_progress is a judgment call the caller
@@ -78,9 +81,13 @@ class ReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     connector: str
+    board_id: str | None
+    sprint_id: str | None
     status: str
     narrative: str | None
     tokens_used: int
+    ticket_count: int
+    prompt_version: int
     model_used: str
     output_format: str
     is_truncated: bool
@@ -88,6 +95,8 @@ class ReportResponse(BaseModel):
     period_start: datetime | None
     period_end: datetime | None
     period_semantics: str | None
+    template_id: UUID | None
+    template_version: int | None
     created_at: datetime
 
 
@@ -104,3 +113,5 @@ class GenerateReportResponse(BaseModel):
     period_start: datetime | None = None
     period_end: datetime | None = None
     period_semantics: str | None = None
+    template_id: UUID | None = None
+    template_version: int | None = None

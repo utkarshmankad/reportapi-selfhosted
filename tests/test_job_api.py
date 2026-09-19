@@ -83,12 +83,18 @@ def test_create_job_dispatches_and_returns_queued(client, db, monkeypatch):
     delay.assert_called_once()
 
 
-def test_create_job_with_template_id_rejected(client):
+def test_create_job_persists_selected_template_id(client, db, monkeypatch):
+    delay = MagicMock()
+    monkeypatch.setattr("app.worker.tasks.execute_report_job.delay", delay)
+    template_id = str(uuid4())
+
     result = client.post(
         "/api/report/jobs",
-        json={"connector": "jira", "board_id": "PROJ", "template_id": str(uuid4())},
+        json={"connector": "jira", "board_id": "PROJ", "template_id": template_id},
     )
-    assert result.status_code == 422
+
+    assert result.status_code == 200
+    assert result.json()["template_id"] == template_id
 
 
 def test_create_job_idempotent_replay_does_not_redispatch(client, db, monkeypatch):

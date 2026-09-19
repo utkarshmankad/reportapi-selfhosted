@@ -1,6 +1,7 @@
 """Core report generation logic — shared by the API route and the Celery beat scheduler."""
 
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,8 +10,8 @@ from app.connectors.asana import AsanaConnector
 from app.connectors.github import GitHubConnector
 from app.connectors.jira import JiraConnector
 from app.core.pii import sanitize_tickets, strip_pii
-from app.core.prompt_builder import build_prompt
-from app.db.models import Report
+from app.core.prompt_builder import PROMPT_VERSION, build_prompt
+from app.db.models import Report, ReportTemplate
 from app.llm.factory import get_llm_provider
 from app.models.ticket import Ticket
 
@@ -72,6 +73,7 @@ async def generate_report(
     assigned_means_in_progress: bool = True,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
+    template_id: UUID | None = None,
 ) -> tuple[Report, int]:
     """
     Fetch tickets, strip PII, generate a narrative, persist the report.
@@ -86,6 +88,12 @@ async def generate_report(
 
     if not board_id and not sprint_id:
         raise ReportGenerationError(422, "Either board_id or sprint_id is required")
+
+    template: ReportTemplate | None = None
+    if template_id is not None:
+        template = await db.get(ReportTemplate, template_id)
+        if template is None:
+            raise ReportGenerationError(422, "Selected template not found")
 
     try:
         source = connectors[connector](config)
@@ -149,9 +157,13 @@ async def generate_report(
 
     report = Report(
         connector=connector,
+        board_id=board_id,
+        sprint_id=sprint_id,
         status="partial" if is_truncated else "complete",
         model_used=config.llm_provider,
         tokens_used=tokens_used,
+        ticket_count=len(tickets),
+        prompt_version=PROMPT_VERSION,
         narrative=narrative,
         output_format=output_format,
         is_truncated=is_truncated,
@@ -159,6 +171,9 @@ async def generate_report(
         period_start=period_start,
         period_end=period_end,
         period_semantics=period_semantics,
+        template_id=template.id if template else None,
+        template_version=template.version if template else None,
+        template_snapshot=template.content if template else None,
     )
     try:
         db.add(report)

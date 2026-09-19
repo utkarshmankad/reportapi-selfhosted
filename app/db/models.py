@@ -26,9 +26,21 @@ class Report(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connector: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Source scope this report was generated from — the actual board/sprint
+    # used, not just which connector, so a report is traceable without
+    # depending on a schedule or job row that may since have been deleted.
+    board_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sprint_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="complete")
     model_used: Mapped[str] = mapped_column(String(100), nullable=False)
     tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Ticket count actually reported on, after dedup/period filtering — the
+    # same number the API returned as ticket_count at generation time, now
+    # persisted so it survives past that one response.
+    ticket_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # SYSTEM_PROMPT_TEMPLATE version that produced this narrative (see
+    # app.core.prompt_builder.PROMPT_VERSION).
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
     error_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -42,6 +54,15 @@ class Report(Base):
     # rather than assumed, since the semantics could change in a later
     # release and old reports must keep meaning what they said at the time.
     period_semantics: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("report_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A frozen copy of the template's content at generation time. PDF
+    # rendering uses this, never the live template row, so editing or
+    # deleting the template afterward can never change what a past report
+    # renders as — a "protected historical reference."
+    template_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -104,6 +125,9 @@ class ReportJob(Base):
     assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("report_templates.id", ondelete="SET NULL"), nullable=True
+    )
 
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="SET NULL"), nullable=True
@@ -134,4 +158,12 @@ class ReportTemplate(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Incremented on every content/name edit. Reports snapshot this value
+    # (Report.template_version) alongside a frozen content copy, so a past
+    # report's template reference stays meaningful — and distinguishable
+    # from a later edit — without needing a full version history table.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Archived templates are hidden from new-report template pickers but
+    # remain fetchable by id, since past reports may still reference them.
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

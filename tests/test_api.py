@@ -24,10 +24,21 @@ def db():
     database.get.return_value = None
     database.execute.return_value = MagicMock()
     database.execute.return_value.scalars.return_value.all.return_value = []
+    database.execute.return_value.scalar_one.return_value = 0
 
     def add(row):
         row.id = row.id or uuid4()
         row.created_at = datetime.now(timezone.utc)
+        if isinstance(row, ReportTemplate):
+            if getattr(row, "version", None) is None:
+                row.version = 1
+            if getattr(row, "archived", None) is None:
+                row.archived = False
+        if isinstance(row, Report):
+            if getattr(row, "ticket_count", None) is None:
+                row.ticket_count = 0
+            if getattr(row, "prompt_version", None) is None:
+                row.prompt_version = 1
 
     database.add.side_effect = add
     return database
@@ -48,13 +59,19 @@ def report():
     return Report(
         id=uuid4(),
         connector="jira",
+        board_id="DEMO",
+        sprint_id=None,
         status="complete",
         narrative="Released safely",
         model_used="test-model",
         tokens_used=20,
+        ticket_count=4,
+        prompt_version=1,
         output_format="text",
         is_truncated=False,
         truncation_reason=None,
+        template_id=None,
+        template_version=None,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -139,7 +156,9 @@ def test_template_crud_and_render_validation(client, db):
     payload = {"name": "Client", "content": "<h1>{{ report.narrative }}</h1>"}
     result = client.post("/api/templates", json=payload)
     assert result.status_code == 200
-    template = ReportTemplate(id=uuid4(), created_at=datetime.now(timezone.utc), **payload)
+    template = ReportTemplate(
+        id=uuid4(), created_at=datetime.now(timezone.utc), version=1, archived=False, **payload
+    )
     db.get.return_value = template
     assert client.get(f"/api/templates/{template.id}").json()["name"] == "Client"
     assert (
@@ -175,6 +194,60 @@ def test_template_crud_and_render_validation(client, db):
     assert client.delete(f"/api/templates/{template.id}").status_code == 204
     db.get.return_value = None
     assert client.get(f"/api/templates/{template.id}").status_code == 404
+
+
+def test_template_preview(client, db):
+    template = ReportTemplate(
+        id=uuid4(),
+        name="Client",
+        content="<h1>{{ report.narrative }}</h1>",
+        version=1,
+        archived=False,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.get.return_value = template
+    result = client.post(f"/api/templates/{template.id}/preview")
+    assert result.status_code == 200
+    assert "Sample preview narrative" in result.json()["html"]
+
+    template.content = "{{"
+    result = client.post(f"/api/templates/{template.id}/preview")
+    assert result.status_code == 422
+
+
+def test_template_archive_and_restore(client, db):
+    template = ReportTemplate(
+        id=uuid4(),
+        name="Client",
+        content="<h1>x</h1>",
+        version=1,
+        archived=False,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.get.return_value = template
+    assert client.post(f"/api/templates/{template.id}/archive").json()["archived"] is True
+    assert client.post(f"/api/templates/{template.id}/restore").json()["archived"] is False
+
+
+def test_list_templates_include_archived_flag(client, db):
+    assert client.get("/api/templates").status_code == 200
+    assert client.get("/api/templates?include_archived=true").status_code == 200
+
+
+def test_delete_template_blocked_when_referenced(client, db):
+    template = ReportTemplate(
+        id=uuid4(),
+        name="Client",
+        content="<h1>x</h1>",
+        version=1,
+        archived=False,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.get.return_value = template
+    db.execute.return_value.scalar_one.return_value = 1
+    result = client.delete(f"/api/templates/{template.id}")
+    assert result.status_code == 409
+    assert "Archive it instead" in result.json()["detail"]
 
 
 def test_schedule_create_edit_pause_delete(client, db):

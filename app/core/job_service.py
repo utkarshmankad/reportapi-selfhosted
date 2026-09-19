@@ -8,6 +8,7 @@ can find and requeue, instead of silently losing the request.
 """
 
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -52,6 +53,7 @@ async def create_report_job(
     assigned_means_in_progress: bool = True,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
+    template_id: UUID | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[ReportJob, bool]:
     """
@@ -77,6 +79,7 @@ async def create_report_job(
         assigned_means_in_progress=assigned_means_in_progress,
         period_start=period_start,
         period_end=period_end,
+        template_id=template_id,
     )
     db.add(job)
     try:
@@ -191,6 +194,7 @@ async def run_job(db: AsyncSession, job: ReportJob) -> ReportJob:
             assigned_means_in_progress=job.assigned_means_in_progress,
             period_start=job.period_start,
             period_end=job.period_end,
+            template_id=job.template_id,
         )
     except ReportGenerationError as e:
         job.finished_at = datetime.now(timezone.utc)
