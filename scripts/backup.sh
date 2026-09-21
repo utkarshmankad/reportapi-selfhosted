@@ -34,7 +34,9 @@ docker run --rm \
   tar czf /backup/runtime_config.tar.gz -C /config .
 
 archive="$out_dir/reportapi-backup-${stamp}.tar.gz"
-tar czf "$archive" -C "$work" database.dump runtime_config.tar.gz
+# macOS tar otherwise adds AppleDouble ._ files, which makes the archive
+# platform-dependent and fails restore's strict member validation.
+COPYFILE_DISABLE=1 tar czf "$archive" -C "$work" database.dump runtime_config.tar.gz
 chmod 600 "$archive"
 
 echo "Backup written to $archive"
