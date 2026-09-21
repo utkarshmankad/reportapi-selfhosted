@@ -24,3 +24,8 @@ runtime-config.lock
 # Regenerated via `helm dependency update helm/reportapi` — Chart.lock
 # pins the versions, these .tgz blobs don't need to live in git.
 helm/reportapi/charts/*.tgz
+
+# scripts/backup.sh working directory and default output location —
+# contains plaintext credentials, never commit.
+.backup-work.*
+/backups/
