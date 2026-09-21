@@ -67,7 +67,27 @@ async def update_profile(
         raise HTTPException(status_code=404, detail="Report profile not found")
 
     updates = request.model_dump(exclude_unset=True)
-    for field, value in updates.items():
+    # A partial update still has to form a valid *complete* profile.  In
+    # particular, changing jira -> github while retaining a Jira project key
+    # would otherwise persist a profile that can never be generated.
+    try:
+        validated = CreateReportProfileRequest.model_validate(
+            {
+                "name": updates.get("name", profile.name),
+                "connector": updates.get("connector", profile.connector),
+                "board_id": updates.get("board_id", profile.board_id),
+                "sprint_id": updates.get("sprint_id", profile.sprint_id),
+                "output_format": updates.get("output_format", profile.output_format),
+                "template_id": updates.get("template_id", profile.template_id),
+                "assigned_means_in_progress": updates.get(
+                    "assigned_means_in_progress", profile.assigned_means_in_progress
+                ),
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    for field, value in validated.model_dump().items():
         setattr(profile, field, value)
 
     try:

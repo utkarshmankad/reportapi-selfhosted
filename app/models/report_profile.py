@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.report import validate_connector_scope
 
@@ -17,6 +17,14 @@ class CreateReportProfileRequest(BaseModel):
     output_format: Literal["text", "markdown", "pdf"] = "text"
     template_id: UUID | None = None
     assigned_means_in_progress: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
 
     @model_validator(mode="after")
     def validate_scope(self):
@@ -36,6 +44,23 @@ class UpdateReportProfileRequest(BaseModel):
     output_format: Literal["text", "markdown", "pdf"] | None = None
     template_id: UUID | None = None
     assigned_means_in_progress: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("name cannot be null")
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
+
+    @field_validator("connector", "output_format", "assigned_means_in_progress")
+    @classmethod
+    def reject_null_required_fields(cls, value):
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
 
 
 class ReportProfileResponse(BaseModel):
