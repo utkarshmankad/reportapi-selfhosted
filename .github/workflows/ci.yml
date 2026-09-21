@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
   schedule:
@@ -152,6 +153,17 @@ jobs:
         with:
           name: browser-failure
           path: config-ui/test-results
+
+  rc-gate:
+    name: RC acceptance gate
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python
+      - uses: azure/setup-helm@v4
+      - run: ./scripts/rc-check.sh
 
   backup-restore:
     name: Backup and restore

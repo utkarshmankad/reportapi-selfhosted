@@ -66,3 +66,4 @@ range.
 - [Operations runbook](runbook.md)
 - [Reproducible builds](reproducible-builds.md)
 - [Backup and restore](backup-restore.md)
+- [Release-candidate checklist](release-checklist.md)
