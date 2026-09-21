@@ -35,11 +35,30 @@ postgresql:
   enabled: true
   auth:
     username: reportapi
-    password: reportapi
+    # Change this before installing in production — it lands in a
+    # Kubernetes Secret either way, but the chart default must not be a
+    # real credential anyone would reuse.
+    password: change-me-reportapi
     database: reportapi
+  # Bitnami moved versioned images behind "bitnamichart"/paid tiers on
+  # docker.io/bitnami; the free, community-usable copies of the same
+  # builds live under bitnamilegacy. Pinned by digest for the same
+  # reproducibility reason as every other base image in this repo.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 17.6.0-debian-12-r4@sha256:926356130b77d5742d8ce605b258d35db9b62f2f8fd1601f9dbaef0c8a710a8d
 
 redis:
   enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  # See postgresql.image above — same bitnamilegacy rationale.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/redis
+    tag: 8.0.3-debian-12-r1@sha256:189aae381e7f2de2fbf90847cc753f7f75077cd119e1af688a0c9e0e86ffd096
 
 env:
   APP_ENV: production
@@ -48,11 +67,23 @@ env:
 
 envSecret:
   # Populate via --set or a values override — never commit real values.
+  # CONFIG_API_TOKEN in particular gates every API route except /health;
+  # an empty default here is intentional so an operator must set it
+  # rather than the chart shipping a guessable one.
+  CONFIG_API_TOKEN: ""
   JIRA_URL: ""
   JIRA_EMAIL: ""
   JIRA_API_TOKEN: ""
   OPENAI_API_KEY: ""
   ANTHROPIC_API_KEY: ""
+
+migrations:
+  # Runs `alembic upgrade head` as a post-install/post-upgrade Helm hook
+  # Job. api/worker/beat pods may restart a few times right after a
+  # fresh install while this Job waits for Postgres and applies
+  # migrations (see templates/migration-job.yaml for why it can't run
+  # pre-install instead) — expected, and self-resolves once it completes.
+  enabled: true
 
 resources:
   requests:

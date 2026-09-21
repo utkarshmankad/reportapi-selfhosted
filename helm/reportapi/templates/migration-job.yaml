@@ -1,0 +1,57 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Fixed (not release-revision-suffixed) name plus hook-delete-policy
+  # below: Helm deletes the previous run's Job before creating this one,
+  # so `helm upgrade` never collides with a completed Job of the same name.
+  name: {{ include "reportapi.fullname" . }}-migrate
+  labels:
+    {{- include "reportapi.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # post-install/post-upgrade, not pre-*: a pre-install hook runs
+    # before ANY other chart resource — including the postgresql
+    # subchart's own StatefulSet — so on a first install there would be
+    # no Postgres pod for this Job to even wait for. Running after lets
+    # the wait-for-postgres init container below wait for a pod that
+    # actually exists.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "reportapi.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # pre-install/pre-upgrade hooks run before the rest of the
+        # chart's resources — including the postgresql subchart's own
+        # StatefulSet — so on a first install there is no guarantee
+        # Postgres is even scheduled yet, let alone accepting
+        # connections. Wait for it explicitly instead of racing it.
+        - name: wait-for-postgres
+          image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ .Release.Name }}-postgresql -p 5432 -U {{ .Values.postgresql.auth.username }}; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "reportapi.fullname" . }}-config
+            - secretRef:
+                name: {{ include "reportapi.fullname" . }}-secrets
+{{- end }}
