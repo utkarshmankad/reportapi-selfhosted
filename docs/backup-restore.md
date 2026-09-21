@@ -30,16 +30,17 @@ exec` and the `runtime_config` named volume to exist.
 
 ```bash
 ./scripts/restore.sh /path/to/reportapi-backup-<timestamp>.tar.gz
-docker compose restart api worker beat
+docker compose up -d api worker beat
 ```
 
-This is destructive: it drops and recreates every object in the
-`reportapi` database (`pg_restore --clean --if-exists`) and replaces
-the entire contents of the `runtime_config` volume. It asks for
-confirmation before proceeding; set `FORCE=1` to skip the prompt for
-scripted use. Restart `api`/`worker`/`beat` afterward — they cache the
-config file's contents in memory and won't see the restored
-credentials until they restart.
+This is destructive: it stops `api`/`worker`/`beat`, replaces the
+database's `public` schema, and replaces the entire contents of the
+`runtime_config` volume. Recreating the schema ensures objects created
+after the backup do not survive the restore. The script validates both
+archive layers before changing state, asks for confirmation, and leaves
+the application services stopped. Set `FORCE=1` to skip the prompt for
+scripted use, then start the services with `docker compose up -d api
+worker beat` after the restore completes.
 
 ## Restore drills
 

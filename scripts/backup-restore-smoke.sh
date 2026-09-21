@@ -22,6 +22,7 @@ cleanup() {
   result=$?
   "${compose[@]}" down -v --remove-orphans || true
   docker rmi reportapi-engine-smoke > /dev/null 2>&1 || true
+  rm -rf ./.backup-smoke-out
   [ "$made_env_placeholder" = 1 ] && rm -f .env
   exit "$result"
 }
@@ -56,12 +57,17 @@ rm -rf "$out_dir"
 archive="$(ls "$out_dir"/*.tar.gz)"
 
 "${compose[@]}" exec -T postgres psql -U reportapi -d reportapi -c "DELETE FROM reports;"
+"${compose[@]}" exec -T postgres psql -U reportapi -d reportapi -c \
+  "CREATE TABLE post_backup_marker (id integer);"
 docker run --rm -v "${project}_runtime_config:/config" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc sh -c 'rm -f /config/runtime.env'
 
 FORCE=1 ./scripts/restore.sh "$archive"
 
 count="$("${compose[@]}" exec -T postgres psql -U reportapi -d reportapi -tAc "SELECT count(*) FROM reports WHERE narrative = 'backup-smoke-marker';")"
 [ "$(echo "$count" | tr -d '[:space:]')" = "1" ] || { echo "Database restore did not bring back the marker row" >&2; exit 1; }
+
+leftover="$("${compose[@]}" exec -T postgres psql -U reportapi -d reportapi -tAc "SELECT to_regclass('public.post_backup_marker') IS NULL;")"
+[ "$(echo "$leftover" | tr -d '[:space:]')" = "t" ] || { echo "Database restore left post-backup objects behind" >&2; exit 1; }
 
 token="$(docker run --rm -v "${project}_runtime_config:/config:ro" alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc cat /config/runtime.env)"
 echo "$token" | grep -q "smoke-marker-token" || { echo "Runtime config restore did not bring back the marker token" >&2; exit 1; }
