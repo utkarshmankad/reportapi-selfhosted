@@ -6,10 +6,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 compose=(docker compose)
+
+# docker-compose.yml's api/worker/beat services declare `env_file: .env`;
+# compose validates that file exists for every service the file defines
+# even when only postgres/redis are actually started. Never read a real
+# .env here — synthetic-only — so create an empty placeholder if none
+# exists, and remove it again only if we created it.
+made_env_placeholder=0
+if [ ! -f .env ]; then
+  touch .env
+  made_env_placeholder=1
+fi
+
 cleanup() {
   result=$?
   "${compose[@]}" down -v --remove-orphans || true
   docker rmi reportapi-engine-smoke > /dev/null 2>&1 || true
+  [ "$made_env_placeholder" = 1 ] && rm -f .env
   exit "$result"
 }
 trap cleanup EXIT
