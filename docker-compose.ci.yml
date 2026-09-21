@@ -26,7 +26,7 @@ x-app: &app
       condition: service_started
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_USER: reportapi
       POSTGRES_PASSWORD: reportapi
@@ -37,14 +37,14 @@ services:
       timeout: 3s
       retries: 30
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 2s
       timeout: 3s
       retries: 30
   upstream:
-    image: python:3.12-slim
+    image: python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
     command: python /mock/upstream.py
     volumes:
       - ./scripts/smoke_upstream.py:/mock/upstream.py:ro
