@@ -153,6 +153,15 @@ jobs:
           name: browser-failure
           path: config-ui/test-results
 
+  backup-restore:
+    name: Backup and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python
+      - run: ./scripts/backup-restore-smoke.sh
+
   helm-smoke:
     name: Helm chart (kind)
     runs-on: ubuntu-latest
@@ -168,7 +177,7 @@ jobs:
   ci:
     name: CI required
     if: always()
-    needs: [quality, unit-tests, frontend-tests, integration-tests, security, smoke, helm-smoke]
+    needs: [quality, unit-tests, frontend-tests, integration-tests, security, smoke, helm-smoke, backup-restore]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
