@@ -62,6 +62,14 @@ def test_create_profile_rejects_missing_scope(client):
     assert result.status_code == 422
 
 
+def test_create_profile_rejects_blank_name(client):
+    result = client.post(
+        "/api/report-profiles",
+        json={"name": "   ", "connector": "jira", "board_id": "DEMO"},
+    )
+    assert result.status_code == 422
+
+
 def test_get_missing_profile_is_404(client):
     result = client.get(f"/api/report-profiles/{uuid4()}")
     assert result.status_code == 404
@@ -93,6 +101,37 @@ def test_update_profile_only_changes_provided_fields(client, db):
     body = result.json()
     assert body["name"] == "New name"
     assert body["board_id"] == "DEMO"
+
+
+def test_update_profile_rejects_connector_scope_mismatch(client, db):
+    existing = ReportProfile(
+        id=uuid4(),
+        name="Demo",
+        connector="jira",
+        board_id="DEMO",
+        sprint_id=None,
+        output_format="text",
+        assigned_means_in_progress=True,
+        template_id=None,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db.get.return_value = existing
+
+    result = client.put(f"/api/report-profiles/{existing.id}", json={"connector": "github"})
+
+    assert result.status_code == 422
+    db.commit.assert_not_awaited()
+
+
+def test_update_profile_rejects_null_required_field(client, db):
+    existing = ReportProfile(id=uuid4(), name="Demo", connector="jira", board_id="DEMO")
+    db.get.return_value = existing
+
+    result = client.put(f"/api/report-profiles/{existing.id}", json={"name": None})
+
+    assert result.status_code == 422
+    db.commit.assert_not_awaited()
 
 
 def test_delete_missing_profile_is_404(client):

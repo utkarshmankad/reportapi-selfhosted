@@ -354,7 +354,11 @@ sample data), but nothing is sent to any external LLM API.
 
 ## Deploying on Kubernetes
 
-An **experimental, incomplete** Helm chart lives in [`helm/reportapi/`](helm/reportapi/). It is not a turnkey supported deployment: database/Redis provisioning, shared config storage and deployment parity need the Sprint 6 work. Use Compose for the supported path. The chart skeleton can be inspected with:
+The Helm chart in [`helm/reportapi/`](helm/reportapi/) deploys the API,
+worker, scheduler, browser UI, schema migrations, Postgres, and Redis. By
+default, configuration is operator-managed through `envSecret`. To save
+credentials through the browser UI, enable `runtimeConfig.persistence` with
+storage that every application pod can mount (normally ReadWriteMany).
 
 ```bash
 helm template reportapi ./helm/reportapi \
@@ -362,8 +366,9 @@ helm template reportapi ./helm/reportapi \
   --set envSecret.OPENAI_API_KEY=...
 ```
 
-See [`helm/reportapi/values.yaml`](helm/reportapi/values.yaml) for the
-full set of overrides (replica counts, image tags, service types).
+See [`helm/reportapi/values.yaml`](helm/reportapi/values.yaml) for the full
+set of overrides, including external database/Redis URLs and an existing
+runtime-config claim.
 
 ## Development
 
