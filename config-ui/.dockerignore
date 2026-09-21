@@ -1,0 +1,12 @@
+*
+!package.json
+!package-lock.json
+!next.config.js
+!tsconfig.json
+!next-env.d.ts
+!app/
+!app/**
+!components/
+!components/**
+!lib/
+!lib/**
