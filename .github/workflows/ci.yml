@@ -221,17 +221,29 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - name: Read application version
+        id: version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          with open("pyproject.toml", "rb") as pyproject:
+              print(f"value={tomllib.load(pyproject)['tool']['poetry']['version']}")
+          PY
+      - name: Publish engine image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/reportapi-engine:latest
             ghcr.io/${{ github.repository_owner }}/reportapi-engine:${{ github.sha }}
-      - uses: docker/build-push-action@v6
+            ghcr.io/${{ github.repository_owner }}/reportapi-engine:${{ steps.version.outputs.value }}
+      - name: Publish config UI image
+        uses: docker/build-push-action@v6
         with:
-          context: ./config-ui
+          context: config-ui
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/reportapi-config-ui:latest
             ghcr.io/${{ github.repository_owner }}/reportapi-config-ui:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/reportapi-config-ui:${{ steps.version.outputs.value }}

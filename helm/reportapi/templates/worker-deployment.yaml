@@ -20,6 +20,7 @@ spec:
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info"]
           envFrom:
             - configMapRef:
@@ -28,6 +29,17 @@ spec:
                 name: {{ include "reportapi.fullname" . }}-secrets
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.runtimeConfig.persistence.enabled }}
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /config
+          {{- end }}
+      {{- if .Values.runtimeConfig.persistence.enabled }}
+      volumes:
+        - name: runtime-config
+          persistentVolumeClaim:
+            claimName: {{ include "reportapi.runtimeConfigClaimName" . }}
+      {{- end }}
 ---
 {{- if .Values.beat.enabled }}
 apiVersion: apps/v1
@@ -52,10 +64,22 @@ spec:
       containers:
         - name: beat
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=info"]
           envFrom:
             - configMapRef:
                 name: {{ include "reportapi.fullname" . }}-config
             - secretRef:
                 name: {{ include "reportapi.fullname" . }}-secrets
+          {{- if .Values.runtimeConfig.persistence.enabled }}
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /config
+          {{- end }}
+      {{- if .Values.runtimeConfig.persistence.enabled }}
+      volumes:
+        - name: runtime-config
+          persistentVolumeClaim:
+            claimName: {{ include "reportapi.runtimeConfigClaimName" . }}
+      {{- end }}
 {{- end }}

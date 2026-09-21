@@ -5,14 +5,22 @@ Postgres is deployed by this chart (the bundled Bitnami postgresql
 subchart) at {{ .Release.Name }}-postgresql:5432.
 {{- else }}
 Postgres is NOT deployed by this chart (postgresql.enabled=false) —
-point envSecret/env at an externally managed instance.
+externalDatabase.url points at the externally managed instance.
 {{- end }}
 {{- if .Values.redis.enabled }}
 Redis is deployed by this chart (the bundled Bitnami redis subchart,
 standalone architecture, no auth) at {{ .Release.Name }}-redis-master:6379.
 {{- else }}
 Redis is NOT deployed by this chart (redis.enabled=false) — point
-env at an externally managed instance.
+externalRedis.url at an externally managed instance.
+{{- end }}
+
+{{- if .Values.runtimeConfig.persistence.enabled }}
+Runtime configuration saves are stored on PVC
+{{ include "reportapi.runtimeConfigClaimName" . }} and shared with workers.
+{{- else }}
+Runtime configuration is read-only. Supply connector and provider secrets
+through envSecret, or enable runtimeConfig.persistence with shared storage.
 {{- end }}
 
 {{- if .Values.migrations.enabled }}

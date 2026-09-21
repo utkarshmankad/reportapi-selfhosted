@@ -1,12 +1,18 @@
 image:
-  repository: reportapi/engine
+  repository: ghcr.io/utkarshmankad/reportapi-engine
   tag: "0.5.2"
   pullPolicy: IfNotPresent
 
 configUiImage:
-  repository: reportapi/config-ui
+  repository: ghcr.io/utkarshmankad/reportapi-config-ui
   tag: "0.5.2"
   pullPolicy: IfNotPresent
+
+# The pinned community images intentionally use Bitnami's legacy repository.
+# Newer subcharts reject that repository unless this acknowledgement is set.
+global:
+  security:
+    allowInsecureImages: true
 
 api:
   replicaCount: 1
@@ -31,6 +37,19 @@ configUi:
   # the way the UI expects. Leave empty to fall back to those headers.
   publicOrigin: ""
 
+# Runtime credentials saved through the UI must be visible to the API and
+# workers and survive pod replacement. Enable this only with storage that can
+# be mounted by every application pod (normally ReadWriteMany). When disabled,
+# the chart sets CONFIG_READ_ONLY=true and credentials come from envSecret.
+runtimeConfig:
+  persistence:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    accessModes:
+      - ReadWriteMany
+    size: 1Gi
+
 postgresql:
   enabled: true
   auth:
@@ -49,6 +68,11 @@ postgresql:
     repository: bitnamilegacy/postgresql
     tag: 17.6.0-debian-12-r4@sha256:926356130b77d5742d8ce605b258d35db9b62f2f8fd1601f9dbaef0c8a710a8d
 
+externalDatabase:
+  # Required when postgresql.enabled=false. Keep this in a private values
+  # file because it normally contains credentials.
+  url: ""
+
 redis:
   enabled: true
   architecture: standalone
@@ -59,6 +83,10 @@ redis:
     registry: docker.io
     repository: bitnamilegacy/redis
     tag: 8.0.3-debian-12-r1@sha256:189aae381e7f2de2fbf90847cc753f7f75077cd119e1af688a0c9e0e86ffd096
+
+externalRedis:
+  # Required when redis.enabled=false.
+  url: ""
 
 env:
   APP_ENV: production

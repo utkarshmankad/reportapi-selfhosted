@@ -54,11 +54,11 @@ The smoke script neither copies nor changes `.env`. It does not touch the defaul
 
 The UI provides Connections, Reports, Schedules and Templates screens. `CONFIG_API_TOKEN`, when set, protects all data endpoints; enter it in **API access**. The UI holds it in memory only. Page refresh clears it. A Next.js server route forwards to runtime `API_INTERNAL_URL`; browser assets contain no credentials or deployment hostname.
 
-Credential saves write a dedicated `CONFIG_STORE_PATH` (default `runtime-config.env`), not the infrastructure `.env`. Compose shares the file using the `runtime_config` volume. Writes are locked, atomic, quoted and owner-only. New report runs reload saved connector/provider overrides. Infrastructure URLs and the API access token remain environment-managed. Back up this volume securely with the database. On Kubernetes, configuration persistence still needs an operator-provided shared writable path; the full Helm deployment remains roadmap work.
+Credential saves write a dedicated `CONFIG_STORE_PATH` (default `runtime-config.env`), not the infrastructure `.env`. Compose shares the file using the `runtime_config` volume. Writes are locked, atomic, quoted and owner-only. New report runs reload saved connector/provider overrides. Infrastructure URLs and the API access token remain environment-managed. Back up this volume securely with the database. The Helm chart defaults to read-only operator-managed credentials; enabling `runtimeConfig.persistence` mounts a shared claim into the API, worker, and scheduler.
 
 Reports currently generate within the HTTP request. The screen displays progress until it completes; it is not a durable background-job UI. Schedules run in UTC and show **last attempt**, not a guaranteed successful run. Output templates affect PDF downloads; they are not accepted silently at generation time. PDF external images/stylesheets are disabled.
 
-Unused Chroma and JWT dependency scaffolding was removed to eliminate vulnerable packages without affecting the implemented report pipeline. WeasyPrint and Next.js were updated to patched versions. Known connector pagination, scheduler concurrency, report provenance and Helm dependency gaps from the roadmap remain separate work.
+Unused Chroma and JWT dependency scaffolding was removed to eliminate vulnerable packages without affecting the implemented report pipeline. WeasyPrint and Next.js were updated to patched versions.
 
 
 ## Sprint 1 regressions

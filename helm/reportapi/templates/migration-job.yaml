@@ -29,21 +29,24 @@ spec:
     spec:
       restartPolicy: Never
       initContainers:
-        # pre-install/pre-upgrade hooks run before the rest of the
-        # chart's resources — including the postgresql subchart's own
-        # StatefulSet — so on a first install there is no guarantee
-        # Postgres is even scheduled yet, let alone accepting
-        # connections. Wait for it explicitly instead of racing it.
+        # Use the application configuration itself for the readiness check,
+        # so this works for both the bundled database and an external URL.
         - name: wait-for-postgres
-          image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - sh
             - -c
             - |
-              until pg_isready -h {{ .Release.Name }}-postgresql -p 5432 -U {{ .Values.postgresql.auth.username }}; do
+              until alembic current >/dev/null 2>&1; do
                 echo "waiting for postgres..."
                 sleep 2
               done
+          envFrom:
+            - configMapRef:
+                name: {{ include "reportapi.fullname" . }}-config
+            - secretRef:
+                name: {{ include "reportapi.fullname" . }}-secrets
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
