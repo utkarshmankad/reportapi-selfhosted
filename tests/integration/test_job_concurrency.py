@@ -100,6 +100,69 @@ async def test_idempotency_key_race_produces_one_job():
 
 
 @pytest.mark.asyncio
+async def test_duplicate_job_messages_only_execute_one_attempt():
+    """At-least-once broker delivery must not run the same queued job twice."""
+    async with AsyncSessionLocal() as db:
+        job = ReportJob(
+            status=JOB_STATUS_QUEUED,
+            connector="jira",
+            board_id="PROJ",
+            sprint_id=None,
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+
+    from app.db.models import Report
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def generate_once(**_kwargs):
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        report = Report(
+            connector="jira",
+            status="complete",
+            model_used="openai",
+            tokens_used=10,
+            narrative="ok",
+            output_format="text",
+        )
+        async with AsyncSessionLocal() as persist_db:
+            persist_db.add(report)
+            await persist_db.commit()
+            await persist_db.refresh(report)
+        return report, 1
+
+    async def execute():
+        async with AsyncSessionLocal() as db:
+            current = await db.get(ReportJob, job_id)
+            return await run_job(db, current)
+
+    with patch("app.core.job_service.generate_report", side_effect=generate_once):
+        first = asyncio.create_task(execute())
+        await entered.wait()
+        duplicate = asyncio.create_task(execute())
+        duplicate_result = await duplicate
+        assert duplicate_result.status == "running"
+        release.set()
+        first_result = await first
+
+    assert calls == 1
+    assert first_result.status == JOB_STATUS_SUCCEEDED
+
+    async with AsyncSessionLocal() as db:
+        stored = await db.get(ReportJob, job_id)
+        assert stored.status == JOB_STATUS_SUCCEEDED
+        assert stored.attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_failed_job_transaction_does_not_affect_next_job():
     """A job whose generate_report call fails mid-transaction must not
     poison a subsequent job's session/transaction — each job execution

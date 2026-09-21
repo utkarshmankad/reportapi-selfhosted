@@ -10,7 +10,7 @@ can find and requeue, instead of silently losing the request.
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,11 +170,32 @@ async def run_job(db: AsyncSession, job: ReportJob) -> ReportJob:
     app.worker.tasks.execute_report_job — so one job's failure can never
     poison another job's transaction.
     """
-    job.status = JOB_STATUS_RUNNING
-    job.started_at = datetime.now(timezone.utc)
-    job.attempts += 1
-    db.add(job)
+    claimed = await db.execute(
+        update(ReportJob)
+        .where(ReportJob.id == job.id, ReportJob.status == JOB_STATUS_QUEUED)
+        .values(
+            status=JOB_STATUS_RUNNING,
+            started_at=datetime.now(timezone.utc),
+            finished_at=None,
+            attempts=ReportJob.attempts + 1,
+        )
+        .returning(ReportJob.id)
+        .execution_options(synchronize_session=False)
+    )
+    owns_attempt = claimed.scalar_one_or_none() is not None
     await db.commit()
+    if not owns_attempt:
+        # Celery is at-least-once: a duplicate message can arrive while the
+        # original attempt is running or after it has finished. Only the
+        # worker that atomically moved queued -> running owns this attempt.
+        await db.refresh(job)
+        logger.info(
+            "duplicate report job execution ignored",
+            extra={"job_id": str(job.id), "status": job.status},
+        )
+        return job
+
+    await db.refresh(job)
     logger.info(
         "report job started",
         extra={
