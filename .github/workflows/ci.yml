@@ -153,10 +153,22 @@ jobs:
           name: browser-failure
           path: config-ui/test-results
 
+  helm-smoke:
+    name: Helm chart (kind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - run: ./scripts/helm-smoke.sh
+
   ci:
     name: CI required
     if: always()
-    needs: [quality, unit-tests, frontend-tests, integration-tests, security, smoke]
+    needs: [quality, unit-tests, frontend-tests, integration-tests, security, smoke, helm-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

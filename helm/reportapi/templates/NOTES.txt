@@ -1,12 +1,31 @@
 ReportAPI Self-Hosted is installed.
 
-This chart assumes Postgres and Redis are reachable at:
-  {{ .Release.Name }}-postgresql:5432
-  {{ .Release.Name }}-redis-master:6379
+{{- if .Values.postgresql.enabled }}
+Postgres is deployed by this chart (the bundled Bitnami postgresql
+subchart) at {{ .Release.Name }}-postgresql:5432.
+{{- else }}
+Postgres is NOT deployed by this chart (postgresql.enabled=false) —
+point envSecret/env at an externally managed instance.
+{{- end }}
+{{- if .Values.redis.enabled }}
+Redis is deployed by this chart (the bundled Bitnami redis subchart,
+standalone architecture, no auth) at {{ .Release.Name }}-redis-master:6379.
+{{- else }}
+Redis is NOT deployed by this chart (redis.enabled=false) — point
+env at an externally managed instance.
+{{- end }}
 
-Pair it with the Bitnami postgresql and redis charts (add them under
-`dependencies:` in Chart.yaml) or point envSecret at externally managed
-instances before installing in production.
+{{- if .Values.migrations.enabled }}
+Schema migrations run automatically as a post-install/post-upgrade Job
+({{ include "reportapi.fullname" . }}-migrate). The api/worker/beat pods
+may restart a few times on a fresh install while that Job waits for
+Postgres and applies migrations — this is expected and self-resolves;
+check its status with:
+  kubectl logs job/{{ include "reportapi.fullname" . }}-migrate
+{{- end }}
+
+Set envSecret.CONFIG_API_TOKEN before installing in production — every
+API route except /health requires it, and the chart ships no default.
 
 Get the API URL:
   kubectl port-forward svc/{{ include "reportapi.fullname" . }}-api 8000:{{ .Values.api.service.port }}

@@ -20,3 +20,7 @@ config-ui/test-results/
 *.tsbuildinfo
 runtime-config.env
 runtime-config.lock
+
+# Regenerated via `helm dependency update helm/reportapi` — Chart.lock
+# pins the versions, these .tgz blobs don't need to live in git.
+helm/reportapi/charts/*.tgz
