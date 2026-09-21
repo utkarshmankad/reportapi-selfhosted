@@ -74,9 +74,14 @@ async def generate_report(
     period_start: datetime | None = None,
     period_end: datetime | None = None,
     template_id: UUID | None = None,
+    commit_result: bool = True,
 ) -> tuple[Report, int]:
     """
     Fetch tickets, strip PII, generate a narrative, persist the report.
+
+    HTTP callers use the default and commit the report immediately. Durable
+    jobs pass commit_result=False so the report, successful job transition,
+    and webhook outbox rows commit as one database transaction.
     Returns (report, ticket_count). Raises ReportGenerationError on any failure.
     """
     config = reload_runtime_settings()
@@ -177,7 +182,10 @@ async def generate_report(
     )
     try:
         db.add(report)
-        await db.commit()
+        if commit_result:
+            await db.commit()
+        else:
+            await db.flush()
         await db.refresh(report)
     except Exception:
         await db.rollback()

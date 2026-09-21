@@ -217,6 +217,7 @@ async def run_job(db: AsyncSession, job: ReportJob) -> ReportJob:
             period_start=job.period_start,
             period_end=job.period_end,
             template_id=job.template_id,
+            commit_result=False,
         )
     except ReportGenerationError as e:
         job.finished_at = datetime.now(timezone.utc)
@@ -256,9 +257,9 @@ async def run_job(db: AsyncSession, job: ReportJob) -> ReportJob:
             schedule.last_attempted_at = job.scheduled_for
             db.add(schedule)
 
-    # Outbox insert in the same transaction as the success — a delivery
-    # row only exists if the report/job state it's notifying about was
-    # actually committed, and vice versa: nothing is silently skipped. A
+    # The report is only flushed above. Commit it here with the successful
+    # job transition and outbox rows so every visible report has its durable
+    # completion state and deliveries, and a rollback removes all three. A
     # periodic sweep (app.worker.tasks.dispatch_pending_webhook_deliveries)
     # picks up pending rows rather than dispatching inline here, so a
     # worker crash between this commit and dispatch still leaves the
