@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.api.routes.health import SCHEDULER_HEARTBEAT_KEY
 from app.config import settings
@@ -28,7 +28,13 @@ from app.core.retention_service import enforce_report_retention
 from app.core.retry_policy import RETRY_BACKOFF_SECONDS
 from app.core.schedule_time import due_occurrences_utc
 from app.core.webhook_service import send_delivery
-from app.db.models import DELIVERY_STATUS_PENDING, ReportJob, Schedule, WebhookDelivery
+from app.db.models import (
+    DELIVERY_STATUS_PENDING,
+    DELIVERY_STATUS_SENDING,
+    ReportJob,
+    Schedule,
+    WebhookDelivery,
+)
 from app.db.session import AsyncSessionLocal, engine
 from app.worker.celery_app import celery_app
 
@@ -195,9 +201,17 @@ async def _dispatch_pending_webhook_deliveries() -> int:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(WebhookDelivery).where(
-                WebhookDelivery.status == DELIVERY_STATUS_PENDING,
-                (WebhookDelivery.next_attempt_at.is_(None))
-                | (WebhookDelivery.next_attempt_at <= now),
+                or_(
+                    and_(
+                        WebhookDelivery.status == DELIVERY_STATUS_PENDING,
+                        (WebhookDelivery.next_attempt_at.is_(None))
+                        | (WebhookDelivery.next_attempt_at <= now),
+                    ),
+                    and_(
+                        WebhookDelivery.status == DELIVERY_STATUS_SENDING,
+                        WebhookDelivery.next_attempt_at <= now,
+                    ),
+                )
             )
         )
         pending = list(result.scalars().all())
@@ -236,11 +250,9 @@ async def _deliver_webhook_and_dispose(delivery_id: str) -> str:
 
 @celery_app.task(name="app.worker.tasks.deliver_webhook")
 def deliver_webhook(delivery_id: str) -> str:
-    # No self-requeue here (unlike execute_report_job): a retryable
-    # failure sets next_attempt_at and waits for the next
-    # dispatch_pending_webhook_deliveries sweep to pick it back up. A
-    # single dispatch path — never two racing schedulers for the same
-    # delivery — is the whole point of the next_attempt_at column.
+    # send_delivery atomically claims pending -> sending. Duplicate broker
+    # messages are ignored, and an expired sending lease is recoverable by
+    # the periodic dispatcher after a worker crash.
     return asyncio.run(_deliver_webhook_and_dispose(delivery_id))
 
 

@@ -24,6 +24,7 @@ JOB_STATUS_FAILED = "failed"
 # for the same reason: an attempt-bounded retry is a deliberate, visible
 # state transition, not a silent in-place mutation.
 DELIVERY_STATUS_PENDING = "pending"
+DELIVERY_STATUS_SENDING = "sending"
 DELIVERY_STATUS_DELIVERED = "delivered"
 DELIVERY_STATUS_FAILED = "failed"
 
@@ -213,6 +214,11 @@ class WebhookDelivery(Base):
     """
 
     __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        UniqueConstraint(
+            "destination_id", "report_id", name="uq_webhook_deliveries_destination_report"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     destination_id: Mapped[uuid.UUID] = mapped_column(
