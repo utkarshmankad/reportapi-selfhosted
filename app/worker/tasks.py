@@ -53,7 +53,8 @@ def _due_occurrences(schedule: Schedule, now: datetime, max_count: int) -> list[
     IANA timezone (see app.core.schedule_time for the DST/missed-run
     policy this implies). Bounded by max_count so a schedule that was
     paused or a worker that was down for a long time doesn't burst-create
-    an unbounded backlog of catch-up jobs in one pass.
+    an unbounded backlog. When more are due, only the newest `max_count`
+    are returned and the older occurrences are skipped permanently.
     """
     base = schedule.last_attempted_at or schedule.created_at
     return due_occurrences_utc(schedule.cron_expression, schedule.timezone, base, now, max_count)

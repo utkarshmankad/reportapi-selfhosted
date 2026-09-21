@@ -20,7 +20,7 @@ DST/missed-run policy (see docs/scheduling.md for the full writeup):
   reconstructed after that bound is exceeded.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
@@ -44,16 +44,25 @@ def next_occurrences_utc(
 def due_occurrences_utc(
     cron_expression: str, tz_name: str, after: datetime, now: datetime, max_count: int
 ) -> list[datetime]:
-    """Occurrences after `after` that are already due (<= now), bounded by
-    max_count so a long-paused or long-downtime schedule doesn't backfill
-    an unbounded backlog in one pass."""
+    """Return at most the most recent `max_count` due occurrences.
+
+    Looking backward from `now` is deliberate: when downtime produced more
+    missed runs than the catch-up policy permits, older occurrences are
+    skipped permanently and the returned final occurrence advances the
+    schedule cursor to the present backlog boundary.
+    """
     tz = ZoneInfo(tz_name)
-    base = _as_aware_utc(after).astimezone(tz)
+    after_utc = _as_aware_utc(after)
+    now_utc = _as_aware_utc(now)
+    # croniter.get_prev() is strict. Moving one microsecond beyond now makes
+    # an occurrence exactly at `now` eligible, matching the <= now contract.
+    base = now_utc.astimezone(tz) + timedelta(microseconds=1)
     cron = croniter(cron_expression, base)
     occurrences: list[datetime] = []
     while len(occurrences) < max_count:
-        next_utc = cron.get_next(datetime).astimezone(timezone.utc)
-        if next_utc > now:
+        previous_utc = cron.get_prev(datetime).astimezone(timezone.utc)
+        if previous_utc <= after_utc:
             break
-        occurrences.append(next_utc)
+        occurrences.append(previous_utc)
+    occurrences.reverse()
     return occurrences
