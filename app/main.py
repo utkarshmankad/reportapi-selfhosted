@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import config as config_routes
-from app.api.routes import health, job, ops, report, schedule, template, webhook
+from app.api.routes import health, job, ops, report, report_profile, schedule, template, webhook
 from app.config import settings
 from app.core.config_auth import require_config_token
 from app.core.errors import RequestIdMiddleware, register_error_handlers
@@ -42,6 +42,7 @@ register_error_handlers(app)
 app.include_router(health.router)
 app.include_router(job.router, dependencies=[Depends(require_config_token)])
 app.include_router(report.router, dependencies=[Depends(require_config_token)])
+app.include_router(report_profile.router, dependencies=[Depends(require_config_token)])
 app.include_router(schedule.router, dependencies=[Depends(require_config_token)])
 app.include_router(template.router, dependencies=[Depends(require_config_token)])
 app.include_router(webhook.router, dependencies=[Depends(require_config_token)])

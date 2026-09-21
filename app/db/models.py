@@ -183,6 +183,33 @@ class ReportTemplate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ReportProfile(Base):
+    """
+    A saved, named bundle of manual-generate parameters (connector, scope,
+    template, format) an operator can re-run without re-entering every
+    field — the on-demand equivalent of a Schedule, which exists for
+    recurring generation instead. Generating from a profile does not
+    create or modify a Schedule and is not itself scheduled.
+    """
+
+    __tablename__ = "report_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    connector: Mapped[str] = mapped_column(String(50), nullable=False)
+    board_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sprint_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    output_format: Mapped[str] = mapped_column(String(20), nullable=False, default="text")
+    assigned_means_in_progress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("report_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class WebhookDestination(Base):
     """
     An operator-approved delivery target. `url`'s origin must be present in
