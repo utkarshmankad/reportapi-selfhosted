@@ -174,6 +174,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/report-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Profiles */
+        get: operations["list_profiles_api_report_profiles_get"];
+        put?: never;
+        /** Create Profile */
+        post: operations["create_profile_api_report_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["get_profile_api_report_profiles__profile_id__get"];
+        /** Update Profile */
+        put: operations["update_profile_api_report_profiles__profile_id__put"];
+        post?: never;
+        /** Delete Profile */
+        delete: operations["delete_profile_api_report_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/report-profiles/{profile_id}/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate From Profile */
+        post: operations["generate_from_profile_api_report_profiles__profile_id__generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/report/generate": {
         parameters: {
             query?: never;
@@ -606,6 +660,33 @@ export interface components {
             /** Template Id */
             template_id?: string | null;
         };
+        /** CreateReportProfileRequest */
+        CreateReportProfileRequest: {
+            /**
+             * Assigned Means In Progress
+             * @default true
+             */
+            assigned_means_in_progress: boolean;
+            /** Board Id */
+            board_id?: string | null;
+            /**
+             * Connector
+             * @enum {string}
+             */
+            connector: "jira" | "asana" | "github";
+            /** Name */
+            name: string;
+            /**
+             * Output Format
+             * @default text
+             * @enum {string}
+             */
+            output_format: "text" | "markdown" | "pdf";
+            /** Sprint Id */
+            sprint_id?: string | null;
+            /** Template Id */
+            template_id?: string | null;
+        };
         /** CreateScheduleRequest */
         CreateScheduleRequest: {
             /**
@@ -665,6 +746,19 @@ export interface components {
             name: string;
             /** Url */
             url: string;
+        };
+        /**
+         * GenerateFromProfileRequest
+         * @description Optional per-run overrides — a profile's stored scope/format is the
+         *     default, but the reporting period is deliberately never stored on the
+         *     profile itself (it would go stale the moment a fixed range is saved),
+         *     so it's supplied fresh on every generate call instead.
+         */
+        GenerateFromProfileRequest: {
+            /** Period End */
+            period_end?: string | null;
+            /** Period Start */
+            period_start?: string | null;
         };
         /** GenerateReportRequest */
         GenerateReportRequest: {
@@ -812,6 +906,38 @@ export interface components {
             /** Template Id */
             template_id: string | null;
         };
+        /** ReportProfileResponse */
+        ReportProfileResponse: {
+            /** Assigned Means In Progress */
+            assigned_means_in_progress: boolean;
+            /** Board Id */
+            board_id: string | null;
+            /** Connector */
+            connector: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Output Format */
+            output_format: string;
+            /** Sprint Id */
+            sprint_id: string | null;
+            /** Template Id */
+            template_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** ReportResponse */
         ReportResponse: {
             /** Board Id */
@@ -928,6 +1054,26 @@ export interface components {
             detail: string;
             /** Ok */
             ok: boolean;
+        };
+        /**
+         * UpdateReportProfileRequest
+         * @description All fields optional — an update only touches what's provided.
+         */
+        UpdateReportProfileRequest: {
+            /** Assigned Means In Progress */
+            assigned_means_in_progress?: boolean | null;
+            /** Board Id */
+            board_id?: string | null;
+            /** Connector */
+            connector?: ("jira" | "asana" | "github") | null;
+            /** Name */
+            name?: string | null;
+            /** Output Format */
+            output_format?: ("text" | "markdown" | "pdf") | null;
+            /** Sprint Id */
+            sprint_id?: string | null;
+            /** Template Id */
+            template_id?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1358,6 +1504,210 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_profiles_api_report_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportProfileResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_profile_api_report_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_api_report_profiles__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_profile_api_report_profiles__profile_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_profile_api_report_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_from_profile_api_report_profiles__profile_id__generate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-config-token"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateFromProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateReportResponse"];
                 };
             };
             /** @description Validation Error */

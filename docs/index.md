@@ -32,7 +32,30 @@ curl -X POST http://localhost:8000/api/report/generate \
 - Scheduled reports via Celery beat
 - PDF / Markdown / text output with sandboxed custom templates
 - Browser-based config UI
-- Experimental Helm skeleton; Compose is the supported deployment path
+- Named report profiles for repeatable on-demand generation
+- Functional Helm chart (`helm/reportapi`) alongside the Compose deployment path
+
+## Report profiles
+
+A profile is a saved, named bundle of manual-generate parameters
+(connector, board/sprint, template, output format) — the on-demand
+equivalent of a Schedule, which exists for recurring generation
+instead. Generating from a profile never creates or touches a
+Schedule.
+
+```bash
+curl -X POST http://localhost:8000/api/report-profiles \
+  -H "X-Config-Token: $CONFIG_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Weekly demo", "connector": "jira", "board_id": "DEMO"}'
+
+curl -X POST http://localhost:8000/api/report-profiles/<id>/generate \
+  -H "X-Config-Token: $CONFIG_API_TOKEN" -H "Content-Type: application/json" -d '{}'
+```
+
+The reporting period is deliberately not stored on the profile — it's
+supplied fresh on each generate call (optional `period_start`/
+`period_end`) so a saved profile never goes stale against a fixed date
+range.
 
 ## Next steps
 
