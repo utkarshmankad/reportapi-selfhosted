@@ -177,6 +177,24 @@ def test_uneven_assignee_load_flagged_for_unique_outlier():
     assert "Load note: alice has 3 ticket(s)" in user_content
 
 
+def test_load_note_reports_second_highest_count_not_the_lowest():
+    tickets = [
+        _ticket(id="1", assignee="alice", status="todo"),
+        _ticket(id="2", assignee="alice", status="todo"),
+        _ticket(id="3", assignee="alice", status="todo"),
+        _ticket(id="4", assignee="alice", status="todo"),
+        _ticket(id="5", assignee="alice", status="todo"),
+        _ticket(id="6", assignee="bob", status="todo"),
+        _ticket(id="7", assignee="bob", status="todo"),
+        _ticket(id="8", assignee="bob", status="todo"),
+        _ticket(id="9", assignee="carol", status="todo"),
+    ]
+    _, user_content, _ = build_prompt(tickets, 800, 12000)
+    # alice=5, bob=3, carol=1 — "max" among everyone else must be bob's 3,
+    # not carol's 1.
+    assert "Load note: alice has 5 ticket(s), more than everyone else (max 3)." in user_content
+
+
 def test_tied_top_assignees_do_not_get_a_misleading_load_note():
     tickets = [
         _ticket(id="1", assignee="alice", status="todo"),

@@ -269,9 +269,14 @@ def build_prompt(
         top_count = max(counts)
         top_holders = [name for name, owned in assignee_map.items() if len(owned) == top_count]
         if len(assignee_map) > 1 and top_count > min(counts) and len(top_holders) == 1:
+            # The next-highest count, not the lowest — with 3+ distinct
+            # loads this used to take min() of the non-top counts and
+            # mislabel it "max", understating everyone else's load
+            # (e.g. counts [5, 3, 1] reported "max 1" instead of "max 3").
+            runner_up = max(c for c in counts if c != top_count)
             lines.append(
                 f"- Load note: {top_holders[0]} has {top_count} ticket(s), "
-                f"more than everyone else (max {min(c for c in counts if c != top_count)})."
+                f"more than everyone else (max {runner_up})."
             )
     else:
         lines.append("- No tickets have an assignee.")
