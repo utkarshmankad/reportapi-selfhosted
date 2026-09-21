@@ -41,3 +41,4 @@ curl -X POST http://localhost:8000/api/report/generate \
 - [Template guide](template-guide.md)
 - [Scheduling: timezones, DST, and missed runs](scheduling.md)
 - [Operations runbook](runbook.md)
+- [Reproducible builds](reproducible-builds.md)

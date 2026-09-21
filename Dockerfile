@@ -1,4 +1,6 @@
-FROM python:3.12-slim AS base
+# Pinned by digest, not just tag, so a rebuild months from now pulls the
+# exact same base layer instead of whatever "3.12-slim" resolves to then.
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
