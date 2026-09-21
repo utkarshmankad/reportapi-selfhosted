@@ -15,10 +15,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def do_GET(self):
-        if self.path.startswith("/rest/api/3/search"):
+        if self.path.startswith("/rest/api/3/search/jql"):
             now = datetime.now(timezone.utc).isoformat()
             self.respond(
                 {
+                    "isLast": True,
                     "issues": [
                         {
                             "key": "DEMO-1",
@@ -32,7 +33,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "updated": now,
                             },
                         }
-                    ]
+                    ],
                 }
             )
         elif self.path in ("/rest/api/3/myself", "/api/tags"):

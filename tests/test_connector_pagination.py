@@ -34,13 +34,21 @@ async def test_jira_paginates_across_multiple_pages(monkeypatch):
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
     def responder(request):
-        start_at = int(request.url.params["startAt"])
+        start_at = int(request.url.params.get("nextPageToken", "0"))
         remaining = 250 - start_at
         count = min(100, remaining)
         page = [_jira_issue(start_at + i) for i in range(count)]
-        return httpx.Response(200, json={"total": 250, "issues": page})
+        is_last = start_at + count >= 250
+        return httpx.Response(
+            200,
+            json={
+                "isLast": is_last,
+                "nextPageToken": None if is_last else str(start_at + count),
+                "issues": page,
+            },
+        )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     connector = JiraConnector()
     result = await connector.fetch({"board_id": "PROJ"})
@@ -57,12 +65,17 @@ async def test_jira_marks_truncated_on_page_limit(monkeypatch):
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
     def responder(request):
-        start_at = int(request.url.params["startAt"])
+        start_at = int(request.url.params.get("nextPageToken", "0"))
         return httpx.Response(
-            200, json={"total": 100000, "issues": [_jira_issue(start_at + i) for i in range(100)]}
+            200,
+            json={
+                "isLast": False,
+                "nextPageToken": str(start_at + 100),
+                "issues": [_jira_issue(start_at + i) for i in range(100)],
+            },
         )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     connector = JiraConnector()
     result = await connector.fetch({"board_id": "PROJ"})
@@ -86,10 +99,15 @@ async def test_jira_later_page_failure_keeps_partial_results(monkeypatch):
         if calls["n"] == 2:
             return httpx.Response(500, json={"error": "boom"})
         return httpx.Response(
-            200, json={"total": 250, "issues": [_jira_issue(i) for i in range(100)]}
+            200,
+            json={
+                "isLast": False,
+                "nextPageToken": "100",
+                "issues": [_jira_issue(i) for i in range(100)],
+            },
         )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     connector = JiraConnector()
     result = await connector.fetch({"board_id": "PROJ"})
@@ -105,7 +123,7 @@ async def test_jira_first_page_failure_raises(monkeypatch):
     monkeypatch.setattr("app.config.settings.jira_email", "test@test.com")
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(500, json={"error": "boom"})
     )
 
@@ -324,12 +342,17 @@ async def test_jira_truncates_mid_page_at_record_limit(monkeypatch):
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
     def responder(request):
-        start_at = int(request.url.params["startAt"])
+        start_at = int(request.url.params.get("nextPageToken", "0"))
         return httpx.Response(
-            200, json={"total": 6000, "issues": [_jira_issue(start_at + i) for i in range(100)]}
+            200,
+            json={
+                "isLast": False,
+                "nextPageToken": str(start_at + 100),
+                "issues": [_jira_issue(start_at + i) for i in range(100)],
+            },
         )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     connector = JiraConnector()
     result = await connector.fetch({"board_id": "PROJ"})

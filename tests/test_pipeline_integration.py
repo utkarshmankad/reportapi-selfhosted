@@ -56,14 +56,20 @@ async def test_jira_full_pipeline_persists_paginated_result(database, stub_llm, 
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
     def responder(request):
-        start_at = int(request.url.params["startAt"])
+        start_at = int(request.url.params.get("nextPageToken", "0"))
         remaining = 150 - start_at
         count = min(100, remaining)
+        is_last = start_at + count >= 150
         return httpx.Response(
-            200, json={"total": 150, "issues": [_jira_issue(start_at + i) for i in range(count)]}
+            200,
+            json={
+                "isLast": is_last,
+                "nextPageToken": None if is_last else str(start_at + count),
+                "issues": [_jira_issue(start_at + i) for i in range(count)],
+            },
         )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     report, count = await generate_report(database, "jira", "PROJ", None)
 
@@ -80,8 +86,8 @@ async def test_jira_full_pipeline_empty_result_rejected(database, stub_llm, monk
     monkeypatch.setattr("app.config.settings.jira_email", "test@test.com")
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
-        return_value=httpx.Response(200, json={"total": 0, "issues": []})
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
+        return_value=httpx.Response(200, json={"isLast": True, "issues": []})
     )
 
     with pytest.raises(ReportGenerationError) as error:
@@ -106,10 +112,15 @@ async def test_jira_full_pipeline_partial_page_failure_still_persists(
         if calls["n"] == 2:
             return httpx.Response(500, json={"error": "boom"})
         return httpx.Response(
-            200, json={"total": 250, "issues": [_jira_issue(i) for i in range(100)]}
+            200,
+            json={
+                "isLast": False,
+                "nextPageToken": "100",
+                "issues": [_jira_issue(i) for i in range(100)],
+            },
         )
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(side_effect=responder)
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(side_effect=responder)
 
     report, count = await generate_report(database, "jira", "PROJ", None)
 
@@ -127,8 +138,8 @@ async def test_jira_full_pipeline_persistence_failure_raises(database, stub_llm,
     monkeypatch.setattr("app.config.settings.jira_email", "test@test.com")
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
-        return_value=httpx.Response(200, json={"total": 1, "issues": [_jira_issue(1)]})
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
+        return_value=httpx.Response(200, json={"isLast": True, "issues": [_jira_issue(1)]})
     )
     database.commit.side_effect = RuntimeError("db down")
 
@@ -301,9 +312,9 @@ async def test_full_pipeline_count_reflects_dedup_not_raw_fetch_count(
 
     duplicate_issue = _jira_issue(1)
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(
-            200, json={"total": 2, "issues": [duplicate_issue, duplicate_issue]}
+            200, json={"isLast": True, "issues": [duplicate_issue, duplicate_issue]}
         )
     )
 
