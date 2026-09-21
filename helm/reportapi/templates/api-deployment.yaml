@@ -40,6 +40,17 @@ spec:
             initialDelaySeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.runtimeConfig.persistence.enabled }}
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /config
+          {{- end }}
+      {{- if .Values.runtimeConfig.persistence.enabled }}
+      volumes:
+        - name: runtime-config
+          persistentVolumeClaim:
+            claimName: {{ include "reportapi.runtimeConfigClaimName" . }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

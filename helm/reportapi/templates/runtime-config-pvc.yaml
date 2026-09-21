@@ -1,0 +1,17 @@
+{{- if and .Values.runtimeConfig.persistence.enabled (not .Values.runtimeConfig.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "reportapi.runtimeConfigClaimName" . }}
+  labels:
+    {{- include "reportapi.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.runtimeConfig.persistence.accessModes | nindent 4 }}
+  {{- if .Values.runtimeConfig.persistence.storageClass }}
+  storageClassName: {{ .Values.runtimeConfig.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.runtimeConfig.persistence.size }}
+{{- end }}

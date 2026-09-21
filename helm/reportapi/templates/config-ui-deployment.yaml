@@ -21,6 +21,7 @@ spec:
       containers:
         - name: config-ui
           image: "{{ .Values.configUiImage.repository }}:{{ .Values.configUiImage.tag }}"
+          imagePullPolicy: {{ .Values.configUiImage.pullPolicy }}
           ports:
             - containerPort: {{ .Values.configUi.port }}
           env:
