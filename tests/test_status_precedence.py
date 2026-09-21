@@ -16,11 +16,11 @@ async def test_jira_falls_back_to_status_category_for_custom_workflow(monkeypatc
     monkeypatch.setattr("app.config.settings.jira_email", "test@test.com")
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(
             200,
             json={
-                "total": 1,
+                "isLast": True,
                 "issues": [
                     {
                         "key": "PROJ-1",
@@ -57,11 +57,11 @@ async def test_jira_custom_done_category_maps_to_done(monkeypatch):
     monkeypatch.setattr("app.config.settings.jira_email", "test@test.com")
     monkeypatch.setattr("app.config.settings.jira_api_token", "fake-token")
 
-    respx.get("https://test.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://test.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(
             200,
             json={
-                "total": 1,
+                "isLast": True,
                 "issues": [
                     {
                         "key": "PROJ-2",

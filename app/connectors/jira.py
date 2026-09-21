@@ -58,27 +58,23 @@ class JiraConnector(Connector):
         tickets: list[Ticket] = []
         truncated = False
         truncation_reason: str | None = None
-        start_at = 0
-        seen_start_ats: set[int] = set()
+        next_page_token: str | None = None
+        seen_page_tokens: set[str] = set()
 
         async with safe_client(self.base_url, "jira", auth=self.auth, timeout=15.0) as client:
             for page in range(MAX_PAGES):
-                if start_at in seen_start_ats:
-                    truncated = True
-                    truncation_reason = "Jira returned a repeated pagination cursor"
-                    break
-                seen_start_ats.add(start_at)
-
                 try:
+                    params = {
+                        "jql": jql,
+                        "maxResults": PAGE_SIZE,
+                        "fields": "summary,description,status,assignee,priority,"
+                        "labels,created,updated,sprint",
+                    }
+                    if next_page_token:
+                        params["nextPageToken"] = next_page_token
                     response = await client.get(
-                        f"{self.base_url}/rest/api/3/search",
-                        params={
-                            "jql": jql,
-                            "startAt": start_at,
-                            "maxResults": PAGE_SIZE,
-                            "fields": "summary,description,status,assignee,priority,"
-                            "labels,created,updated,sprint",
-                        },
+                        f"{self.base_url}/rest/api/3/search/jql",
+                        params=params,
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -86,7 +82,7 @@ class JiraConnector(Connector):
                     if page == 0:
                         raise
                     truncated = True
-                    truncation_reason = f"Jira page fetch failed at offset {start_at}"
+                    truncation_reason = "Jira page fetch failed"
                     break
 
                 issues = data.get("issues", [])
@@ -108,17 +104,27 @@ class JiraConnector(Connector):
                         )
                     )
 
-                total = data.get("total")
-                start_at += len(issues)
                 if len(tickets) >= MAX_RECORDS:
-                    truncated = total is not None and start_at < total
+                    truncated = not data.get("isLast", False)
                     if truncated:
                         truncation_reason = f"Reached the {MAX_RECORDS}-record fetch limit"
                     break
                 if not issues:
                     break
-                if total is not None and start_at >= total:
+                if data.get("isLast", False):
                     break
+
+                candidate = data.get("nextPageToken")
+                if not candidate:
+                    truncated = True
+                    truncation_reason = "Jira did not return a next-page token"
+                    break
+                if candidate in seen_page_tokens:
+                    truncated = True
+                    truncation_reason = "Jira returned a repeated pagination cursor"
+                    break
+                seen_page_tokens.add(candidate)
+                next_page_token = candidate
             else:
                 # Exhausted MAX_PAGES without the source signaling completion.
                 truncated = True
