@@ -1,6 +1,8 @@
 """Real Postgres tests for the webhook outbox and delivery pipeline (S5-01)."""
 
+import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -129,6 +131,57 @@ async def test_send_delivery_success_marks_delivered_and_signs_payload():
 
 
 @pytest.mark.asyncio
+async def test_duplicate_delivery_messages_only_send_once():
+    async with AsyncSessionLocal() as db:
+        report = await _make_report(db)
+        await _make_destination(db)
+        deliveries = await enqueue_deliveries_for_report(db, report)
+        await db.commit()
+        delivery_id = deliveries[0].id
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    sends = 0
+
+    class FakeResponse:
+        status_code = 200
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            nonlocal sends
+            sends += 1
+            entered.set()
+            await release.wait()
+            return FakeResponse()
+
+    async def execute():
+        async with AsyncSessionLocal() as db:
+            delivery = await db.get(WebhookDelivery, delivery_id)
+            return await send_delivery(db, delivery)
+
+    with (
+        patch("app.core.webhook_service.target_policy", return_value=False),
+        patch("app.core.webhook_service.safe_client", return_value=FakeClient()),
+    ):
+        first = asyncio.create_task(execute())
+        await entered.wait()
+        duplicate = await execute()
+        assert duplicate.status == "sending"
+        release.set()
+        result = await first
+
+    assert sends == 1
+    assert result.status == "delivered"
+    assert result.attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_send_delivery_failure_retries_then_terminally_fails():
     async with AsyncSessionLocal() as db:
         report = await _make_report(db)
@@ -144,6 +197,9 @@ async def test_send_delivery_failure_retries_then_terminally_fails():
         for attempt in range(1, MAX_DELIVERY_ATTEMPTS + 1):
             async with AsyncSessionLocal() as db:
                 delivery = await db.get(WebhookDelivery, delivery_id)
+                if delivery.next_attempt_at is not None:
+                    delivery.next_attempt_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+                    await db.commit()
                 result = await send_delivery(db, delivery)
             assert result.attempts == attempt
             if attempt < MAX_DELIVERY_ATTEMPTS:

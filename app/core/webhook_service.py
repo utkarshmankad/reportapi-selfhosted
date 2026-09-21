@@ -11,9 +11,9 @@ the notification the way an inline fire-and-forget call would.
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging_config import get_logger
@@ -23,6 +23,7 @@ from app.db.models import (
     DELIVERY_STATUS_DELIVERED,
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_PENDING,
+    DELIVERY_STATUS_SENDING,
     Report,
     WebhookDelivery,
     WebhookDestination,
@@ -35,6 +36,7 @@ logger = get_logger(__name__)
 # retry (POST /api/webhooks/deliveries/{id}/retry) bypasses this bound
 # explicitly, since that's an operator decision, not an automatic one.
 MAX_DELIVERY_ATTEMPTS = 5
+DELIVERY_LEASE = timedelta(minutes=10)
 
 # Retry delay for a failed attempt with attempts remaining — shared with
 # ReportJob's retry backoff via app.core.retry_policy (see S5-05).
@@ -95,12 +97,50 @@ async def send_delivery(db: AsyncSession, delivery: WebhookDelivery) -> WebhookD
     using a session scoped to just this delivery, so one destination's
     failure can't affect another's transaction.
     """
+    now = datetime.now(timezone.utc)
+    claimed = await db.execute(
+        update(WebhookDelivery)
+        .where(
+            WebhookDelivery.id == delivery.id,
+            or_(
+                and_(
+                    WebhookDelivery.status == DELIVERY_STATUS_PENDING,
+                    or_(
+                        WebhookDelivery.next_attempt_at.is_(None),
+                        WebhookDelivery.next_attempt_at <= now,
+                    ),
+                ),
+                and_(
+                    WebhookDelivery.status == DELIVERY_STATUS_SENDING,
+                    WebhookDelivery.next_attempt_at <= now,
+                ),
+            ),
+        )
+        .values(
+            status=DELIVERY_STATUS_SENDING,
+            attempts=WebhookDelivery.attempts + 1,
+            next_attempt_at=now + DELIVERY_LEASE,
+        )
+        .returning(WebhookDelivery.id)
+        .execution_options(synchronize_session=False)
+    )
+    owns_attempt = claimed.scalar_one_or_none() is not None
+    await db.commit()
+    if not owns_attempt:
+        await db.refresh(delivery)
+        logger.info(
+            "duplicate webhook delivery execution ignored",
+            extra={"delivery_id": str(delivery.id), "status": delivery.status},
+        )
+        return delivery
+
+    await db.refresh(delivery)
     destination = await db.get(WebhookDestination, delivery.destination_id)
-    delivery.attempts += 1
 
     if destination is None or not destination.active:
         delivery.status = DELIVERY_STATUS_FAILED
         delivery.last_error = "Destination was deleted or deactivated"
+        delivery.next_attempt_at = None
         db.add(delivery)
         await db.commit()
         await db.refresh(delivery)
@@ -128,6 +168,7 @@ async def send_delivery(db: AsyncSession, delivery: WebhookDelivery) -> WebhookD
             delivery.status = DELIVERY_STATUS_DELIVERED
             delivery.delivered_at = datetime.now(timezone.utc)
             delivery.last_error = None
+            delivery.next_attempt_at = None
         else:
             raise UnsafeURLError(f"Destination responded with HTTP {response.status_code}")
     except Exception as e:
