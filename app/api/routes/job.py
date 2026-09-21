@@ -7,11 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.job_service import create_report_job
+from app.core.logging_config import get_logger
 from app.db.models import ReportJob
 from app.db.session import get_db
 from app.models.job import CreateReportJobRequest, ReportJobResponse
 
 router = APIRouter(prefix="/api/report/jobs", tags=["report-jobs"])
+logger = get_logger(__name__)
 
 
 @router.post("", response_model=ReportJobResponse)
@@ -32,7 +34,17 @@ async def create_job(request: CreateReportJobRequest, db: AsyncSession = Depends
     if created:
         from app.worker.tasks import execute_report_job
 
-        execute_report_job.delay(str(job.id))
+        try:
+            execute_report_job.delay(str(job.id))
+        except Exception:
+            # The queued database row is the durable work record. A periodic
+            # dispatcher will retry broker publication, so a transient broker
+            # outage after the commit must not turn an accepted request into
+            # an HTTP failure or lose it forever.
+            logger.warning(
+                "initial report job dispatch failed; queued sweep will retry",
+                extra={"job_id": str(job.id)},
+            )
 
     return job
 

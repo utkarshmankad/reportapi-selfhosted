@@ -369,23 +369,24 @@ async def test_successful_job_enqueues_webhook_deliveries():
         await db.refresh(destination)
         await db.refresh(job)
 
-    fake_report = Report(
-        connector="jira",
-        board_id="PROJ",
-        status="complete",
-        model_used="openai",
-        tokens_used=10,
-        ticket_count=1,
-        narrative="ok",
-        output_format="text",
-    )
-    with patch(
-        "app.core.job_service.generate_report",
-        AsyncMock(return_value=(fake_report, 1)),
-    ):
+    async def generate_in_transaction(db, **_kwargs):
+        report = Report(
+            connector="jira",
+            board_id="PROJ",
+            status="complete",
+            model_used="openai",
+            tokens_used=10,
+            ticket_count=1,
+            narrative="ok",
+            output_format="text",
+        )
+        db.add(report)
+        await db.flush()
+        await db.refresh(report)
+        return report, 1
+
+    with patch("app.core.job_service.generate_report", side_effect=generate_in_transaction):
         async with AsyncSessionLocal() as db:
-            db.add(fake_report)
-            await db.commit()
             job = await db.get(ReportJob, job.id)
             await run_job(db, job)
 
@@ -396,3 +397,71 @@ async def test_successful_job_enqueues_webhook_deliveries():
         deliveries = result.scalars().all()
         assert len(deliveries) == 1
         assert deliveries[0].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_report_rolls_back_when_completion_outbox_fails():
+    """A report must not survive without its successful job/outbox commit."""
+    from app.db.models import Report
+
+    async with AsyncSessionLocal() as db:
+        job = ReportJob(status=JOB_STATUS_QUEUED, connector="jira", board_id="PROJ")
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+
+    created_report_id = None
+
+    async def generate_in_transaction(db, **_kwargs):
+        nonlocal created_report_id
+        report = Report(
+            connector="jira",
+            board_id="PROJ",
+            status="complete",
+            model_used="openai",
+            tokens_used=10,
+            ticket_count=1,
+            narrative="ok",
+            output_format="text",
+        )
+        db.add(report)
+        await db.flush()
+        await db.refresh(report)
+        created_report_id = report.id
+        return report, 1
+
+    with (
+        patch("app.core.job_service.generate_report", side_effect=generate_in_transaction),
+        patch(
+            "app.core.job_service.enqueue_deliveries_for_report",
+            AsyncMock(side_effect=RuntimeError("outbox insert failed")),
+        ),
+        pytest.raises(RuntimeError, match="outbox insert failed"),
+    ):
+        async with AsyncSessionLocal() as db:
+            current = await db.get(ReportJob, job_id)
+            await run_job(db, current)
+
+    async with AsyncSessionLocal() as db:
+        assert await db.get(Report, created_report_id) is None
+        stored_job = await db.get(ReportJob, job_id)
+        assert stored_job.status == "running"
+
+
+@pytest.mark.asyncio
+async def test_queued_job_sweep_republishes_stranded_work():
+    from app.worker import tasks
+
+    async with AsyncSessionLocal() as db:
+        job = ReportJob(status=JOB_STATUS_QUEUED, connector="jira", board_id="PROJ")
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.id
+
+    with patch.object(tasks.execute_report_job, "delay") as delay:
+        published = await tasks._dispatch_queued_report_jobs()
+
+    assert published >= 1
+    delay.assert_any_call(str(job_id))

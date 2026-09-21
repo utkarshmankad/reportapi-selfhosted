@@ -17,6 +17,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.worker.tasks.recover_stuck_report_jobs",
         "schedule": crontab(minute="*/5"),
     },
+    "dispatch-queued-report-jobs-every-minute": {
+        "task": "app.worker.tasks.dispatch_queued_report_jobs",
+        "schedule": crontab(minute="*"),
+    },
     "dispatch-pending-webhook-deliveries-every-minute": {
         "task": "app.worker.tasks.dispatch_pending_webhook_deliveries",
         "schedule": crontab(minute="*"),

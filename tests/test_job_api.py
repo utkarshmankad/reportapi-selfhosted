@@ -83,6 +83,18 @@ def test_create_job_dispatches_and_returns_queued(client, db, monkeypatch):
     delay.assert_called_once()
 
 
+def test_create_job_stays_accepted_when_broker_dispatch_fails(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.worker.tasks.execute_report_job.delay",
+        MagicMock(side_effect=RuntimeError("broker unavailable")),
+    )
+
+    result = client.post("/api/report/jobs", json={"connector": "jira", "board_id": "PROJ"})
+
+    assert result.status_code == 200
+    assert result.json()["status"] == "queued"
+
+
 def test_create_job_persists_selected_template_id(client, db, monkeypatch):
     delay = MagicMock()
     monkeypatch.setattr("app.worker.tasks.execute_report_job.delay", delay)

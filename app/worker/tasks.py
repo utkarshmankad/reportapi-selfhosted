@@ -156,6 +156,40 @@ def recover_stuck_report_jobs() -> int:
     return count
 
 
+async def _dispatch_queued_report_jobs() -> int:
+    """Republish durable queued jobs, including rows stranded by a broker
+    outage or a process crash between the database commit and `.delay()`."""
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(ReportJob.id).where(ReportJob.status == "queued").order_by(ReportJob.queued_at)
+        )
+        job_ids = list(result.scalars().all())
+
+    published = 0
+    for job_id in job_ids:
+        try:
+            execute_report_job.delay(str(job_id))
+            published += 1
+        except Exception:
+            logger.warning(
+                "queued report job dispatch failed",
+                extra={"job_id": str(job_id)},
+            )
+    return published
+
+
+async def _dispatch_queued_report_jobs_and_dispose() -> int:
+    try:
+        return await _dispatch_queued_report_jobs()
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="app.worker.tasks.dispatch_queued_report_jobs")
+def dispatch_queued_report_jobs() -> int:
+    return asyncio.run(_dispatch_queued_report_jobs_and_dispose())
+
+
 async def _dispatch_pending_webhook_deliveries() -> int:
     now = datetime.now(timezone.utc)
     async with AsyncSessionLocal() as db:
