@@ -58,6 +58,14 @@ def test_due_occurrences_respects_max_count():
     now = datetime(2026, 1, 2, tzinfo=timezone.utc)
     occurrences = due_occurrences_utc("* * * * *", "UTC", after, now, max_count=5)
     assert len(occurrences) == 5
+    assert occurrences == [
+        datetime(2026, 1, 1, 23, 56, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 23, 57, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 23, 58, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 23, 59, tzinfo=timezone.utc),
+        datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc),
+    ]
+    assert due_occurrences_utc("* * * * *", "UTC", occurrences[-1], now, max_count=5) == []
 
 
 def test_naive_after_datetime_is_treated_as_utc():

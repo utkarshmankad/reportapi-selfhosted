@@ -305,11 +305,31 @@ async def test_dispatch_backfills_bounded_occurrences_after_downtime():
     now = datetime.now(timezone.utc)
     occurrences = _due_occurrences(schedule, now, MAX_BACKFILL_OCCURRENCES)
     assert len(occurrences) == MAX_BACKFILL_OCCURRENCES
+    assert now - occurrences[0] < timedelta(minutes=MAX_BACKFILL_OCCURRENCES + 1)
 
     async with AsyncSessionLocal() as db:
         sched = await db.get(Schedule, schedule.id)
         claimed = await claim_schedule_occurrences(db, sched, occurrences)
     assert len(claimed) == MAX_BACKFILL_OCCURRENCES
+
+    # Advancing the dispatcher cursor to the last claimed occurrence skips
+    # every older miss. The next pass cannot drain another historical batch.
+    assert (
+        _due_occurrences(
+            Schedule(
+                connector="jira",
+                board_id="PROJ",
+                cron_expression="* * * * *",
+                timezone="UTC",
+                active=True,
+                created_at=schedule.created_at,
+                last_attempted_at=occurrences[-1],
+            ),
+            now,
+            MAX_BACKFILL_OCCURRENCES,
+        )
+        == []
+    )
 
 
 @pytest.mark.asyncio
