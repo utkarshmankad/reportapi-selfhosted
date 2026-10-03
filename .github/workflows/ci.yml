@@ -227,7 +227,7 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import tomllib
           with open("pyproject.toml", "rb") as pyproject:
-              print(f"value={tomllib.load(pyproject)['tool']['poetry']['version']}")
+              print(f"value={tomllib.load(pyproject)['project']['version']}")
           PY
       - name: Publish engine image
         uses: docker/build-push-action@v6
