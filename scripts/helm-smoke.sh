@@ -20,37 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-helm dependency update helm/reportapi
-
-# Exercise deployment modes the live smoke does not use. External services
-# must replace (rather than duplicate) bundled URLs, and writable runtime
-# configuration must mount the same claim in API, worker, and scheduler.
-external_render="$(helm template external helm/reportapi \
-  --set postgresql.enabled=false \
-  --set redis.enabled=false \
-  --set-string externalDatabase.url=postgresql+asyncpg://user:pass@db.example/reportapi \
-  --set-string externalRedis.url=redis://cache.example:6379/0)"
-echo "$external_render" | grep -q 'postgresql+asyncpg://user:pass@db.example/reportapi'
-echo "$external_render" | grep -q 'redis://cache.example:6379/0'
-! echo "$external_render" | grep -q 'external-postgresql:5432'
-! echo "$external_render" | grep -q 'external-redis-master:6379'
-
-# Each bundled dependency can also be disabled independently. This catches
-# subchart image-verification/global-value interactions that a both-external
-# render cannot expose.
-helm template external-db helm/reportapi \
-  --set postgresql.enabled=false \
-  --set-string externalDatabase.url=postgresql+asyncpg://user:pass@db.example/reportapi \
-  >/dev/null
-helm template external-redis helm/reportapi \
-  --set redis.enabled=false \
-  --set-string externalRedis.url=redis://cache.example:6379/0 \
-  >/dev/null
-
-persistence_render="$(helm template persistence helm/reportapi \
-  --set runtimeConfig.persistence.enabled=true)"
-echo "$persistence_render" | grep -q 'kind: PersistentVolumeClaim'
-[ "$(echo "$persistence_render" | grep -c 'claimName: persistence-reportapi-runtime-config')" = "3" ]
+./scripts/helm-render-check.sh
 
 kind create cluster --name "$cluster"
 
