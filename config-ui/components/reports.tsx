@@ -11,6 +11,7 @@ import {
   type Job,
 } from "../lib/api";
 import { ScopeFields, FormatField, Notice } from "./shared";
+import { JobHistory } from "./job-history";
 
 function jobStatusLabel(job: Job | null): string {
   if (!job) return "";
@@ -168,6 +169,12 @@ export function Reports({ token }: { token: string }) {
         )}
       </section>
       <Notice message={error} error />
+      <JobHistory
+        key={token}
+        token={token}
+        version={version}
+        onOpen={openReport}
+      />
       {selected && (
         <section className="card report-detail" aria-label="Report detail">
           <div className="section-heading">

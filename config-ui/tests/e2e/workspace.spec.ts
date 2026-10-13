@@ -34,6 +34,17 @@ test("authenticated setup, report/PDF, schedules and templates work in the real 
   const downloading = page.waitForEvent("download");
   await preview.getByRole("button", { name: "Download report" }).click();
   expect((await downloading).suggestedFilename()).toMatch(/\.pdf$/);
+  await page.getByRole("button", { name: /Connections/ }).click();
+  await page
+    .getByRole("button", { name: /Reports/ })
+    .first()
+    .click();
+  const jobHistory = page.getByRole("region", { name: "Report jobs" });
+  await expect(
+    jobHistory.getByText("succeeded", { exact: true }).first(),
+  ).toBeVisible();
+  await jobHistory.getByRole("button", { name: "Open report" }).first().click();
+  await expect(preview).toContainText("Reporting workspace shipped.");
   await page.getByRole("button", { name: /Schedules/ }).click();
   await page.getByLabel("Project key").fill("DEMO");
   await page.getByRole("button", { name: "Create schedule" }).click();

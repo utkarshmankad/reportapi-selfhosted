@@ -56,7 +56,7 @@ The UI provides Connections, Reports, Schedules and Templates screens. `CONFIG_A
 
 Credential saves write a dedicated `CONFIG_STORE_PATH` (default `runtime-config.env`), not the infrastructure `.env`. Compose shares the file using the `runtime_config` volume. Writes are locked, atomic, quoted and owner-only. New report runs reload saved connector/provider overrides. Infrastructure URLs and the API access token remain environment-managed. Back up this volume securely with the database. The Helm chart defaults to read-only operator-managed credentials; enabling `runtimeConfig.persistence` mounts a shared claim into the API, worker, and scheduler.
 
-Reports currently generate within the HTTP request. The screen displays progress until it completes; it is not a durable background-job UI. Schedules run in UTC and show **last attempt**, not a guaranteed successful run. Output templates affect PDF downloads; they are not accepted silently at generation time. PDF external images/stylesheets are disabled.
+Manual reports are queued durably and processed by a worker. The screen polls during generation; after a browser timeout or page refresh, **Report jobs** lists persisted status, attempt counts, failure reasons and links to completed reports. Use **Refresh jobs** to update progress. Schedules run in UTC and show **last attempt**, not a guaranteed successful run. Output templates affect PDF downloads; they are not accepted silently at generation time. PDF external images/stylesheets are disabled.
 
 Unused Chroma and JWT dependency scaffolding was removed to eliminate vulnerable packages without affecting the implemented report pipeline. WeasyPrint and Next.js were updated to patched versions.
 

@@ -78,7 +78,7 @@ export async function pollJob(
     if (TERMINAL_JOB_STATUSES.includes(job.status)) return job;
     if (Date.now() >= deadline)
       throw new Error(
-        "This report is taking longer than expected. Check back in Report history shortly.",
+        "This report is taking longer than expected. Check Report jobs for its status; generation continues in the background.",
       );
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
