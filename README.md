@@ -109,7 +109,7 @@ binding.
 
 **Fetch → deduplicate → filter identifiers and alias assignees → construct prompt → generate narrative → persist → render on request.**
 
-Manual generation runs inline in the HTTP request. Scheduled generation runs in a Celery worker. Durable queued manual jobs and scheduler overlap protection remain roadmap work.
+Manual generation creates a durable queued job; Celery workers generate both manual and scheduled reports. The Reports screen shows persisted job status, attempts, failures and completed results with refresh and pagination. Jobs continue after leaving the page or a browser polling timeout; reopen **Report jobs** to check status or open a completed report.
 
 `POST /api/report/generate` is the single code path for both an
 on-demand API call and a Celery-beat-triggered scheduled report — the

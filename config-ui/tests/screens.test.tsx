@@ -96,6 +96,7 @@ beforeEach(() => {
       return { ok: true, detail: "Connection successful." };
     if (path.startsWith("/reports"))
       return path.includes("offset=20") ? [] : reports;
+    if (path.startsWith("/report/jobs?")) return jobs;
     if (path === "/report/jobs") return { id: "j1", status: "queued" };
     if (path === "/report/jobs/j1")
       return { id: "j1", status: "succeeded", report_id: "r1", attempts: 1 };
@@ -260,6 +261,7 @@ it("surfaces a failed job's error_reason", async () => {
     if (path.startsWith("/reports"))
       return path.includes("offset=20") ? [] : reports;
     if (path === "/templates") return templates;
+    if (path.startsWith("/report/jobs?")) return jobs;
     if (path === "/report/jobs" && method === "POST")
       return { id: "j1", status: "queued", attempts: 0 };
     if (path === "/report/jobs/j1")
@@ -496,4 +498,23 @@ it("identifies externally managed connections and removes save forms", async () 
   expect(
     screen.queryByRole("button", { name: "Save connection" }),
   ).not.toBeInTheDocument();
+});
+
+it("opens a persisted job result in the Reports preview", async () => {
+  const user = userEvent.setup();
+  jobs = [
+    {
+      id: "j1",
+      status: "succeeded",
+      connector: "jira",
+      report_id: "r1",
+      attempts: 1,
+      created_at: report.created_at,
+    } as Job,
+  ];
+  render(<Reports token="t" />);
+  await user.click(await screen.findByRole("button", { name: "Open report" }));
+  expect(
+    await screen.findByRole("region", { name: "Report detail" }),
+  ).toHaveTextContent("Two issues shipped.");
 });
